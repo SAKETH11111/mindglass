@@ -45,8 +45,57 @@ class ConnectionAckMessage(TypedDict):
     timestamp: int
 
 
+class PhaseChangeMessage(TypedDict):
+    """Debate phase change notification"""
+    type: Literal["phase_change"]
+    phase: str  # "dispatch", "conflict", "synthesis", "convergence"
+    activeAgents: list[str]
+    timestamp: int
+
+
+class DebateTimeoutMessage(TypedDict):
+    """Debate reached 12-second hard timeout"""
+    type: Literal["debate_timeout"]
+    message: str
+    timestamp: int
+
+
+class MetricsMessage(TypedDict):
+    """Performance metrics during debate"""
+    type: Literal["metrics"]
+    tokensPerSecond: int
+    totalTokens: int
+    timestamp: int
+
+
+class AgentDoneMessage(TypedDict):
+    """Agent completed streaming"""
+    type: Literal["agent_done"]
+    agentId: str
+    timestamp: int
+
+
+class AgentErrorMessage(TypedDict):
+    """Agent encountered an error"""
+    type: Literal["agent_error"]
+    agentId: str
+    error: str
+    timestamp: int
+
+
 # Union type for all messages
-WebSocketMessage = StartDebateMessage | AgentTokenMessage | DebateCompleteMessage | ErrorMessage | ConnectionAckMessage
+WebSocketMessage = (
+    StartDebateMessage |
+    AgentTokenMessage |
+    DebateCompleteMessage |
+    ErrorMessage |
+    ConnectionAckMessage |
+    PhaseChangeMessage |
+    DebateTimeoutMessage |
+    MetricsMessage |
+    AgentDoneMessage |
+    AgentErrorMessage
+)
 
 
 def create_agent_token(agent_id: str, content: str) -> AgentTokenMessage:
@@ -81,5 +130,53 @@ def create_connection_ack(client_id: str) -> ConnectionAckMessage:
     return {
         "type": "connection_ack",
         "client_id": client_id,
+        "timestamp": int(datetime.now().timestamp() * 1000)
+    }
+
+
+def create_phase_change(phase: str, active_agents: list[str]) -> PhaseChangeMessage:
+    """Create a phase change message"""
+    return {
+        "type": "phase_change",
+        "phase": phase,
+        "activeAgents": active_agents,
+        "timestamp": int(datetime.now().timestamp() * 1000)
+    }
+
+
+def create_debate_timeout() -> DebateTimeoutMessage:
+    """Create a debate timeout message"""
+    return {
+        "type": "debate_timeout",
+        "message": "Debate reached 12-second hard timeout",
+        "timestamp": int(datetime.now().timestamp() * 1000)
+    }
+
+
+def create_metrics(tokens_per_second: int, total_tokens: int) -> MetricsMessage:
+    """Create a metrics message"""
+    return {
+        "type": "metrics",
+        "tokensPerSecond": tokens_per_second,
+        "totalTokens": total_tokens,
+        "timestamp": int(datetime.now().timestamp() * 1000)
+    }
+
+
+def create_agent_done(agent_id: str) -> AgentDoneMessage:
+    """Create an agent done message"""
+    return {
+        "type": "agent_done",
+        "agentId": agent_id,
+        "timestamp": int(datetime.now().timestamp() * 1000)
+    }
+
+
+def create_agent_error(agent_id: str, error: str) -> AgentErrorMessage:
+    """Create an agent error message"""
+    return {
+        "type": "agent_error",
+        "agentId": agent_id,
+        "error": error,
         "timestamp": int(datetime.now().timestamp() * 1000)
     }

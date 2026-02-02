@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDebateStore } from './useDebateStore';
-import type { WebSocketMessage } from '@/types/websocket';
+import type { WebSocketMessage } from '@/types';
 
 const WS_URL = 'ws://localhost:8000/ws/debate';
 const MAX_RETRIES = 3;
@@ -15,9 +15,13 @@ export function useWebSocket() {
   const {
     setConnectionState,
     appendToken,
+    setPhase,
+    setAgentDone,
+    setAgentError,
+    updateMetrics,
+    endDebate,
     setError,
-    startStreaming,
-    stopStreaming,
+    startDebate,
   } = useDebateStore();
 
   const connect = useCallback(() => {
@@ -62,32 +66,50 @@ export function useWebSocket() {
 
           switch (data.type) {
             case 'agent_token': {
-              // Start streaming if this is the first token
-              const store = useDebateStore.getState();
-              if (!store.isStreaming && store.currentAgentId !== data.agentId) {
-                startStreaming(data.agentId);
-              }
               appendToken(data.agentId, data.content);
               break;
             }
 
-            case 'agent_done':
-              stopStreaming();
+            case 'agent_done': {
+              setAgentDone(data.agentId);
               break;
+            }
 
-            case 'debate_complete':
-              // Debate finished successfully - ensure streaming is stopped
-              stopStreaming();
+            case 'agent_error': {
+              setAgentError(data.agentId, data.error);
+              break;
+            }
+
+            case 'phase_change': {
+              setPhase(data.phase, data.activeAgents);
+              break;
+            }
+
+            case 'metrics': {
+              updateMetrics(data.tokensPerSecond, data.totalTokens);
+              break;
+            }
+
+            case 'debate_complete': {
+              endDebate();
               console.log('Debate complete');
               break;
+            }
 
-            case 'error':
-              setError(data.message);
-              stopStreaming();
+            case 'debate_timeout': {
+              endDebate();
+              console.log('Debate timeout - 12 second limit reached');
               break;
+            }
 
-            default:
+            case 'error': {
+              setError(data.message);
+              break;
+            }
+
+            default: {
               console.warn('Unknown message type:', data);
+            }
           }
         } catch (err) {
           console.error('Failed to parse message:', err);
@@ -97,7 +119,7 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket:', err);
       setError('Failed to connect to server');
     }
-  }, [setConnectionState, appendToken, setError, startStreaming, stopStreaming]);
+  }, [setConnectionState, appendToken, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError]);
 
   useEffect(() => {
     connect();
@@ -131,5 +153,13 @@ export function useWebSocket() {
     connect();
   }, [connect, setError]);
 
-  return { sendMessage, isReady, retry };
+  // Start a debate by sending start_debate message
+  const startDebateSession = useCallback((query: string) => {
+    // Update local state first
+    startDebate(query);
+    // Send to server
+    return sendMessage({ type: 'start_debate', query });
+  }, [sendMessage, startDebate]);
+
+  return { sendMessage, isReady, retry, startDebateSession };
 }

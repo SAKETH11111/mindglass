@@ -126,9 +126,16 @@ class TestAgentPrompts:
             agent = agent_class()
             prompt = agent.system_prompt
 
-            # Check that prompt mentions other agents (at least 2)
-            mentioned_count = sum(1 for name in agent_names if name in prompt)
-            assert mentioned_count >= 2, f"{agent_id} prompt should reference other agents by name"
+            # Check that prompt mentions other agents
+            mentioned_names = [name for name in agent_names if name in prompt]
+            mentioned_count = len(mentioned_names)
+            
+            # Synthesizer must reference all agents for consensus-building
+            if agent_id == "synthesizer":
+                assert mentioned_count >= 6, f"Synthesizer prompt should reference most agents, found: {mentioned_names}"
+            else:
+                # Other agents should reference at least 3 other agents
+                assert mentioned_count >= 3, f"{agent_id} prompt should reference at least 3 agents, found: {mentioned_names}"
 
     def test_all_prompts_define_personality(self):
         """AC #2: Prompt defines agent's personality, role, and output format"""
