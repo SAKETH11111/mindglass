@@ -16,9 +16,14 @@ export interface AgentDoneMessage {
   timestamp: number;
 }
 
+export interface DebateCompleteMessage {
+  type: 'debate_complete';
+  timestamp: number;
+}
+
 export interface ErrorMessage {
   type: 'error';
   message: string;
 }
 
-export type WebSocketMessage = AgentTokenMessage | AgentDoneMessage | ErrorMessage;
+export type WebSocketMessage = AgentTokenMessage | AgentDoneMessage | DebateCompleteMessage | ErrorMessage;

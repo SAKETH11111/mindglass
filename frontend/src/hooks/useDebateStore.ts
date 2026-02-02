@@ -12,7 +12,7 @@ interface DebateState {
   setConnectionState: (state: ConnectionState) => void;
   appendToken: (agentId: string, content: string) => void;
   clearResponse: () => void;
-  setError: (error: string) => void;
+  setError: (error: string | null) => void;
   startStreaming: (agentId: string) => void;
   stopStreaming: () => void;
 }
@@ -38,11 +38,11 @@ export const useDebateStore = create<DebateState>((set) => ({
     error: null,
   }),
 
-  setError: (error) => set({
+  setError: (error) => set((s) => ({
     error,
-    connectionState: 'error',
+    connectionState: error ? 'error' : s.connectionState,
     isStreaming: false,
-  }),
+  })),
 
   startStreaming: (agentId) => set({
     isStreaming: true,

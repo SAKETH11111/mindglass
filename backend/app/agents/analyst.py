@@ -3,11 +3,11 @@ Analyst Agent for MindGlass
 Streams responses using Cerebras API
 """
 
-import os
 from typing import Dict, Any, AsyncGenerator
 from cerebras.cloud.sdk import Cerebras
 
 from app.agents.base import LLMAgent
+from app.config import settings
 
 
 class AnalystAgent(LLMAgent):
@@ -24,8 +24,8 @@ class AnalystAgent(LLMAgent):
             prompt_file="analyst.txt",
             model="llama-3.3-70b"
         )
-        # Initialize Cerebras client
-        api_key = os.getenv("CEREBRAS_API_KEY")
+        # Initialize Cerebras client using centralized config
+        api_key = settings.CEREBRAS_API_KEY
         if not api_key:
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
         self.client = Cerebras(api_key=api_key)

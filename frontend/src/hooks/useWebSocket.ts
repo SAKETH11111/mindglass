@@ -47,7 +47,7 @@ export function useWebSocket() {
             connect();
           }, delay);
         } else {
-          setError('Connection lost. Please refresh the page to reconnect.');
+          setError('Connection lost. Click retry to reconnect.');
         }
       };
 
@@ -73,6 +73,12 @@ export function useWebSocket() {
 
             case 'agent_done':
               stopStreaming();
+              break;
+
+            case 'debate_complete':
+              // Debate finished successfully - ensure streaming is stopped
+              stopStreaming();
+              console.log('Debate complete');
               break;
 
             case 'error':
@@ -115,5 +121,15 @@ export function useWebSocket() {
     return false;
   }, []);
 
-  return { sendMessage, isReady };
+  // Manual retry function for when automatic retries are exhausted
+  const retry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+    }
+    retryCount.current = 0;
+    setError(null);
+    connect();
+  }, [connect, setError]);
+
+  return { sendMessage, isReady, retry };
 }

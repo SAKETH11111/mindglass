@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from app.agents.analyst import AnalystAgent
 from app.websocket.messages import create_debate_complete, create_error
+from app.config import settings
 
 # Load environment variables
 load_dotenv()
@@ -24,10 +25,10 @@ app = FastAPI(
     description="Real-time debate visualization platform"
 )
 
-# CORS middleware configuration
+# CORS middleware configuration - using centralized settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,7 +66,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # Handle start_debate message
             if message.get("type") == "start_debate":
-                query = message.get("query", "")
+                query = message.get("query", "").strip()
+                
+                # Validate query is not empty
+                if not query:
+                    await websocket.send_json(create_error("Query cannot be empty"))
+                    continue
+                    
                 print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}...")
 
                 try:

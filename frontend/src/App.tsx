@@ -3,6 +3,8 @@ import { Send, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDebateStore } from './hooks/useDebateStore'
 import type { StartDebateMessage } from './types/websocket'
+import { AGENT_COLORS, AGENT_NAMES } from './types/agent'
+import type { AgentId } from './types/agent'
 
 // Cerebras Logo Component using official SVG
 function CerebrasLogo({ className = "w-12 h-12" }: { className?: string }) {
@@ -95,8 +97,10 @@ function App() {
     return "ready"
   }
 
-  const agentName = currentAgentId ? currentAgentId.charAt(0).toUpperCase() + currentAgentId.slice(1) : "Analyst"
-  const agentColor = currentAgentId === "analyst" ? "#4ECDC4" : "#FF6B6B"
+  // Use centralized agent color constants
+  const agentId = (currentAgentId as AgentId) || 'analyst'
+  const agentName = AGENT_NAMES[agentId] || 'Analyst'
+  const agentColor = AGENT_COLORS[agentId] || '#4ECDC4'
 
   return (
     <div className="min-h-screen bg-[#1A1A1A] text-white relative overflow-hidden">
