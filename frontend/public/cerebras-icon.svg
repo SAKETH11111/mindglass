@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Outer ring -->
+  <path stroke="#F15A29" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M24 46C11.85 46 2 36.15 2 24S11.85 2 24 2"/>
+  <!-- Middle ring -->
+  <path stroke="#F15A29" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M12.67 37.6c-7.5-6.29-8.47-17.46-2.18-24.96S27.95 4.16 35.45 10.45"/>
+  <!-- Inner ring -->
+  <path stroke="#F15A29" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M18.22 36.89c-6.56-3.46-9.07-11.59-5.61-18.16 3.47-6.56 11.59-9.08 18.16-5.61"/>
+  <!-- Core arc -->
+  <path stroke="#F15A29" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M24 33.16a9.16 9.16 0 0 1 0-18.31"/>
+</svg>

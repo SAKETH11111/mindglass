@@ -1,0 +1,238 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Cerebras Brand Colors - Primary */
+    --color-cerebras-orange: #F15A29;
+    --color-cerebras-orange-hover: #FF985D;
+    --color-cerebras-orange-light: #FFB088;
+    --color-cerebras-burgundy: #4D1210;
+    --color-cerebras-espresso: #2F1810;
+    --color-cerebras-teal: #3D8A8A;
+    --color-cerebras-blue-light: #C5D4D1;
+
+    /* Cerebras Black Scale */
+    --color-black-900: #1A1A1A;
+    --color-black-875: #2E2E2E;
+    --color-black-850: #262626;
+    --color-black-800: #333333;
+    --color-black-700: #4D4D4D;
+    --color-black-500: #808080;
+    --color-black-300: #B0B0B0;
+    --color-black-200: #CACACA;
+    --color-black-100: #E8E5E3;
+    --color-black-50: #F5F4F2;
+
+    /* Cerebras Accent Colors */
+    --color-purple: #A876E8;
+    --color-baby-blue: #7AC4D9;
+    --color-mandarin: #FF985D;
+    --color-green: #92E849;
+    --color-grey: #B0B0B0;
+
+    /* Semantic Tokens - Dark Theme (Cerebras Default) */
+    --color-bg-primary: #1A1A1A;
+    --color-bg-secondary: #262626;
+    --color-bg-raised: #333333;
+    --color-bg-card: #262626;
+
+    --color-text-primary: #FFFFFF;
+    --color-text-secondary: #B0B0B0;
+    --color-text-muted: #808080;
+
+    --color-border: #333333;
+    --color-border-light: #4D4D4D;
+
+    --color-accent: #F15A29;
+    --color-accent-hover: #FF985D;
+    --color-accent-light: #FFB088;
+
+    /* shadcn/ui compatibility */
+    --background: 0 0% 10%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 15%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 15%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 15 88% 55%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 50%;
+    --accent: 15 88% 55%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 15 88% 55%;
+    --radius: 0.5rem;
+
+    /* Agent Colors */
+    --color-analyst: #4ECDC4;
+    --color-optimist: #92E849;
+    --color-pessimist: #FF985D;
+    --color-critic: #FF6B6B;
+    --color-strategist: #A876E8;
+    --color-finance: #7AC4D9;
+    --color-risk: #4D1210;
+    --color-synthesizer: #FFFFFF;
+
+    /* Fonts - Manrope is Cerebras brand font */
+    --font-family-sans: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-family-mono: "JetBrains Mono", "Fira Code", monospace;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    font-family: var(--font-family-sans);
+  }
+
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-sans);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  /* Die-cut Tile Effect (Cerebras Design System) */
+  .die-cut-tile {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    position: relative;
+  }
+
+  .die-cut-tile::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 0.5rem;
+    pointer-events: none;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* Glass Morphism */
+  .glass {
+    background: rgba(38, 38, 38, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border);
+  }
+
+  .glass-input {
+    background: rgba(38, 38, 38, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--color-border);
+    transition: all 0.2s ease;
+  }
+
+  .glass-input:hover {
+    border-color: var(--color-border-light);
+    background: rgba(38, 38, 38, 0.8);
+  }
+
+  .glass-input:focus {
+    border-color: var(--color-cerebras-orange);
+    background: rgba(38, 38, 38, 0.9);
+    box-shadow: 0 0 0 1px var(--color-cerebras-orange);
+  }
+
+  /* Gradient Text - Cerebras Orange to Mandarin */
+  .gradient-text {
+    background: linear-gradient(135deg, #F15A29 0%, #FF985D 50%, #FFB088 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glow Effects */
+  .glow-orange {
+    box-shadow: 0 0 20px rgba(241, 90, 41, 0.3),
+                0 0 40px rgba(241, 90, 41, 0.1);
+  }
+
+  .glow-orange-subtle {
+    box-shadow: 0 0 10px rgba(241, 90, 41, 0.2);
+  }
+
+  /* Wafer Scale Grid Pattern */
+  .wafer-grid {
+    background-image:
+      linear-gradient(to right, rgba(241, 90, 41, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(241, 90, 41, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Custom colors for backwards compatibility */
+  .bg-mindglass {
+    background-color: var(--color-bg-primary);
+  }
+
+  .text-coral {
+    color: var(--color-cerebras-orange);
+  }
+
+  .text-teal {
+    color: var(--color-cerebras-teal);
+  }
+
+  .bg-coral {
+    background-color: var(--color-cerebras-orange);
+  }
+
+  .bg-teal {
+    background-color: var(--color-cerebras-teal);
+  }
+
+  .border-coral {
+    border-color: var(--color-cerebras-orange);
+  }
+
+  .border-teal {
+    border-color: var(--color-cerebras-teal);
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-black-700);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-black-500);
+}
+
+/* Selection */
+::selection {
+  background: rgba(241, 90, 41, 0.3);
+  color: var(--color-text-primary);
+}
