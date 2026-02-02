@@ -1,5 +1,5 @@
 """
-Analyst Agent for MindGlass
+Optimist Agent for MindGlass
 Streams responses using Cerebras API
 """
 
@@ -10,22 +10,21 @@ from app.agents.base import LLMAgent
 from app.config import settings
 
 
-class AnalystAgent(LLMAgent):
+class OptimistAgent(LLMAgent):
     """
-    Analyst agent that streams responses from Cerebras API.
-    Uses the llama-3.3-70b model for analysis.
+    Optimist agent that streams responses from Cerebras API.
+    Identifies opportunities and positive outcomes.
     """
 
     def __init__(self):
         super().__init__(
-            agent_id="analyst",
-            name="Analyst",
-            description="Breaks down complex problems and provides structured analysis",
-            prompt_file="analyst.txt",
+            agent_id="optimist",
+            name="Optimist",
+            description="Identifies opportunities, best-case scenarios, and positive outcomes",
+            prompt_file="optimist.txt",
             model="llama-3.3-70b"
         )
-        self.color = "#5F8787"
-        # Initialize Cerebras client using centralized config
+        self.color = "#E78A53"
         api_key = settings.CEREBRAS_API_KEY
         if not api_key:
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
@@ -44,7 +43,6 @@ class AnalystAgent(LLMAgent):
         self.set_status("processing")
 
         try:
-            # Create streaming completion
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -55,17 +53,14 @@ class AnalystAgent(LLMAgent):
                 max_tokens=400
             )
 
-            # Stream tokens to client
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     yield self._create_token_message(token)
 
-            # Signal completion
             yield self._create_done_message()
 
         except Exception as e:
-            # Yield error as token
             yield self._create_token_message(f"[Error: {str(e)}]")
             yield self._create_done_message()
 
@@ -73,10 +68,10 @@ class AnalystAgent(LLMAgent):
             self.set_status("idle")
 
     def get_capabilities(self) -> list:
-        """Return analyst capabilities."""
+        """Return optimist capabilities."""
         return [
-            "problem_breakdown",
-            "factual_analysis",
-            "structured_reasoning",
-            "multi_agent_debate"
+            "opportunity_identification",
+            "positive_scenario_planning",
+            "upside_analysis",
+            "growth_potential_assessment"
         ]

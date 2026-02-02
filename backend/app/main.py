@@ -11,7 +11,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from app.agents.analyst import AnalystAgent
+from app.orchestrator.debate import DebateOrchestrator
 from app.websocket.messages import create_debate_complete, create_error
 from app.config import settings
 
@@ -34,8 +34,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize agent
-analyst_agent = AnalystAgent()
+# Initialize orchestrator for multi-agent debates
+orchestrator = DebateOrchestrator()
 
 
 @app.get("/api/health")
@@ -76,8 +76,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}...")
 
                 try:
-                    # Stream agent responses
-                    async for token in analyst_agent.stream_response(query):
+                    # Stream from ALL agents via orchestrator
+                    async for token in orchestrator.stream_debate(query):
                         await websocket.send_json(token)
 
                     # Send completion message

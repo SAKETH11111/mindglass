@@ -1,5 +1,5 @@
 """
-Analyst Agent for MindGlass
+Synthesizer Agent for MindGlass
 Streams responses using Cerebras API
 """
 
@@ -10,22 +10,21 @@ from app.agents.base import LLMAgent
 from app.config import settings
 
 
-class AnalystAgent(LLMAgent):
+class SynthesizerAgent(LLMAgent):
     """
-    Analyst agent that streams responses from Cerebras API.
-    Uses the llama-3.3-70b model for analysis.
+    Synthesizer agent that streams responses from Cerebras API.
+    Creates final consensus by integrating all agent perspectives.
     """
 
     def __init__(self):
         super().__init__(
-            agent_id="analyst",
-            name="Analyst",
-            description="Breaks down complex problems and provides structured analysis",
-            prompt_file="analyst.txt",
+            agent_id="synthesizer",
+            name="Synthesizer",
+            description="Creates final consensus answer by integrating all agent perspectives",
+            prompt_file="synthesizer.txt",
             model="llama-3.3-70b"
         )
-        self.color = "#5F8787"
-        # Initialize Cerebras client using centralized config
+        self.color = "#C1C1C1"
         api_key = settings.CEREBRAS_API_KEY
         if not api_key:
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
@@ -44,7 +43,6 @@ class AnalystAgent(LLMAgent):
         self.set_status("processing")
 
         try:
-            # Create streaming completion
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -52,20 +50,17 @@ class AnalystAgent(LLMAgent):
                     {"role": "user", "content": query}
                 ],
                 stream=True,
-                max_tokens=400
+                max_tokens=500
             )
 
-            # Stream tokens to client
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     yield self._create_token_message(token)
 
-            # Signal completion
             yield self._create_done_message()
 
         except Exception as e:
-            # Yield error as token
             yield self._create_token_message(f"[Error: {str(e)}]")
             yield self._create_done_message()
 
@@ -73,10 +68,10 @@ class AnalystAgent(LLMAgent):
             self.set_status("idle")
 
     def get_capabilities(self) -> list:
-        """Return analyst capabilities."""
+        """Return synthesizer capabilities."""
         return [
-            "problem_breakdown",
-            "factual_analysis",
-            "structured_reasoning",
-            "multi_agent_debate"
+            "consensus_building",
+            "perspective_integration",
+            "summary_synthesis",
+            "recommendation_formation"
         ]
