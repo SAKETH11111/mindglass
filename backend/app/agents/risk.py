@@ -30,13 +30,14 @@ class RiskAgent(LLMAgent):
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
         self.client = Cerebras(api_key=api_key)
 
-    async def stream_response(self, query: str, model_override: str = None) -> AsyncGenerator[Dict[str, Any], None]:
+    async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a response to the given query using Cerebras API.
 
         Args:
             query: The user's query or message
             model_override: Optional model ID to override the default
+            use_reasoning: Whether to enable reasoning_effort for deeper analysis
 
         Yields:
             Dict containing agent_token messages
@@ -45,15 +46,16 @@ class RiskAgent(LLMAgent):
         model_to_use = model_override or self.model
 
         try:
-            stream = self.client.chat.completions.create(
-                model=model_to_use,
-                messages=[
+            params = {
+                "model": model_to_use,
+                "messages": [
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": query}
                 ],
-                stream=True,
-                max_tokens=400
-            )
+                "stream": True,
+                "max_tokens": 600
+            }
+            stream = self.client.chat.completions.create(**params)
 
             for chunk in stream:
                 if chunk.choices[0].delta.content:

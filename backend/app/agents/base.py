@@ -84,13 +84,14 @@ class BaseAgent(ABC):
         self.status = status
 
     @abstractmethod
-    async def stream_response(self, query: str, model_override: str = None) -> AsyncGenerator[Dict[str, Any], None]:
+    async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a response to the given query.
 
         Args:
             query: The user's query or message
             model_override: Optional model ID to use instead of the default
+            use_reasoning: Whether to enable reasoning_effort for deeper analysis
 
         Yields:
             Dict containing agent_token messages with:

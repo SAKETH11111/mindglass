@@ -85,6 +85,19 @@ export function useWebSocket() {
               break;
             }
 
+            case 'phase_start': {
+              // New phased streaming message - set current phase name
+              console.log(`Phase ${data.phase} started: ${data.name}`);
+              // Set phase using the numeric phase to named phase mapping
+              const phaseNames: Record<number, string> = {
+                1: 'dispatch',
+                2: 'conflict', 
+                3: 'synthesis'
+              };
+              setPhase(phaseNames[data.phase] || 'dispatch', []);
+              break;
+            }
+
             case 'metrics': {
               updateMetrics(data.tokensPerSecond, data.totalTokens);
               break;

@@ -16,6 +16,22 @@ const formatTokPerSec = (tokenCount: number, elapsedMs: number): string => {
   return tokPerSec.toFixed(0);
 };
 
+// Parse <think>...</think> tags from response
+const parseThinkTags = (text: string): { thinking: string; answer: string } => {
+  const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
+  if (thinkMatch) {
+    const thinking = thinkMatch[1].trim();
+    const answer = text.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+    return { thinking, answer };
+  }
+  // Handle incomplete think tag (still streaming)
+  const openThinkMatch = text.match(/<think>([\s\S]*)/);
+  if (openThinkMatch && !text.includes('</think>')) {
+    return { thinking: openThinkMatch[1].trim(), answer: '' };
+  }
+  return { thinking: '', answer: text };
+};
+
 /**
  * DEBATE PAGE - LAYOUT SKELETON
  * 
@@ -60,6 +76,10 @@ export function DebatePage() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
   
+  // Collapsible section state - for auto-open/close behavior
+  const [isPerspectivesOpen, setIsPerspectivesOpen] = useState(true);
+  const [openAgents, setOpenAgents] = useState<Set<AgentId>>(new Set());
+  
   // Store state
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
@@ -93,6 +113,29 @@ export function DebatePage() {
     
     return () => clearInterval(interval);
   }, [isDebating]);
+  
+  // Auto-open/close perspectives based on streaming state
+  useEffect(() => {
+    const perspectiveAgents = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk'] as AgentId[];
+    
+    // Auto-open agents that are streaming, auto-close when done
+    const newOpenAgents = new Set<AgentId>();
+    perspectiveAgents.forEach(id => {
+      if (agents[id].isStreaming) {
+        newOpenAgents.add(id);
+      }
+    });
+    setOpenAgents(newOpenAgents);
+    
+    // Auto-collapse perspectives when synthesizer is complete
+    const hasSynthesis = agents.synthesizer.text && !agents.synthesizer.isStreaming;
+    if (hasSynthesis) {
+      setIsPerspectivesOpen(false);
+    } else if (perspectiveAgents.some(id => agents[id].isStreaming)) {
+      // Keep perspectives open while any perspective agent is streaming
+      setIsPerspectivesOpen(true);
+    }
+  }, [agents]);
   
   // Handle agent selection (from sidebar or center grid)
   const handleAgentClick = (agentId: AgentId) => {
@@ -320,57 +363,216 @@ export function DebatePage() {
             </div>
           </div>
           
-          {/* Debate Stream - Scrollable */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {/* All agents respond in PARALLEL - not sequential turns */}
-            <div className="grid grid-cols-2 gap-3">
-              {AGENT_IDS.map((agentId) => {
-                const color = AGENT_COLORS[agentId];
-                const isSelected = selectedAgent === agentId;
-                const agent = agents[agentId];
-                const tokPerSec = formatTokPerSec(agent.tokenCount, elapsedMs);
-                
-                return (
-                  <div 
-                    key={agentId}
-                    onClick={() => handleAgentClick(agentId)}
-                    className={`
-                      min-h-[140px] p-4
-                      transition-all duration-200 cursor-pointer
-                      ${designMode === 'boxy' 
-                        ? `bg-[#0f0f0f] border ${isSelected ? 'border-white/40 bg-[#141414]' : 'border-white/[0.08] hover:border-white/20 hover:bg-[#121212]'}`
-                        : `bg-white/[0.03] backdrop-blur-xl border rounded-xl ${isSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]'}`
-                      }
-                    `}
-                  >
-                    {/* Agent Header */}
-                    <div className="flex items-center gap-2.5 mb-3">
-                      <div 
-                        className={`w-6 h-6 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? '' : 'rounded-full'}`}
-                        style={{ backgroundColor: color }}
-                      >
-                        <img 
-                          src={getAvatarUrl(agentId)} 
-                          alt={AGENT_NAMES[agentId]}
-                          className="w-full h-full"
-                        />
-                      </div>
-                      <span className={`text-xs ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-white/70' : 'font-medium text-white/80'}`}>
-                        {AGENT_NAMES[agentId]}
-                      </span>
-                      <span className="ml-auto text-[10px] text-white/30 tabular-nums">
-                        {agent.isStreaming ? `${tokPerSec} tok/s` : agent.tokenCount > 0 ? `${agent.tokenCount} tokens` : '--'}
-                      </span>
-                    </div>
-                    
-                    {/* Response Text */}
-                    <p className={`text-[13px] leading-[1.6] text-white/50 ${designMode === 'boxy' ? 'font-mono text-[12px]' : ''}`}>
-                      {agent.text || (agent.isStreaming ? 'Starting...' : 'Waiting for response...')}
-                    </p>
+          {/* Main Content - Perspectives First, Answer Last */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            {/* ═══ PERSPECTIVES (Auto-open/close based on streaming) ═══ */}
+            {(() => {
+              const perspectiveAgents = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk'] as AgentId[];
+              const anyStreaming = perspectiveAgents.some(id => agents[id].isStreaming);
+              
+              return (
+                <details 
+                  className="group" 
+                  open={isPerspectivesOpen}
+                  onToggle={(e) => setIsPerspectivesOpen((e.target as HTMLDetailsElement).open)}
+                >
+                  <summary className={`
+                    flex items-center gap-2 cursor-pointer list-none select-none py-2
+                    ${designMode === 'boxy' ? 'font-mono uppercase text-[10px] tracking-widest' : 'text-xs'}
+                    text-white/40 hover:text-white/60 transition-colors
+                  `}>
+                    <svg 
+                      className={`w-3 h-3 transition-transform ${isPerspectivesOpen ? 'rotate-90' : ''}`}
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span>{designMode === 'boxy' ? 'PERSPECTIVES' : 'Perspectives'}</span>
+                    <span className="text-white/25">
+                      ({perspectiveAgents.filter(id => agents[id].text).length}/7)
+                    </span>
+                    {anyStreaming && (
+                      <div className={`w-1.5 h-1.5 ml-1 ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
+                    )}
+                  </summary>
+                  
+                  <div className="mt-3 space-y-2">
+                    {perspectiveAgents.map((agentId) => {
+                      const color = AGENT_COLORS[agentId];
+                      const agent = agents[agentId];
+                      const { thinking, answer: cleanAnswer } = parseThinkTags(agent.text);
+                      
+                      // Use controlled state for open/close
+                      const isOpen = openAgents.has(agentId);
+                      
+                      if (!agent.text && !agent.isStreaming) return null;
+                      
+                      return (
+                        <details 
+                          key={agentId} 
+                          open={isOpen}
+                          onToggle={(e) => {
+                            const newOpen = (e.target as HTMLDetailsElement).open;
+                            setOpenAgents(prev => {
+                              const next = new Set(prev);
+                              if (newOpen) next.add(agentId);
+                              else next.delete(agentId);
+                              return next;
+                            });
+                          }}
+                        >
+                          <summary className={`
+                            flex items-center gap-2.5 p-3 cursor-pointer list-none
+                            transition-all duration-150
+                            ${designMode === 'boxy' 
+                              ? `bg-[#0f0f0f] border ${agent.isStreaming ? 'border-emerald-500/50' : 'border-white/[0.08]'} hover:border-white/20`
+                              : `bg-white/[0.03] border ${agent.isStreaming ? 'border-emerald-500/30' : 'border-white/[0.06]'} hover:border-white/[0.12] rounded-lg`
+                            }
+                          `}>
+                            <div 
+                              className={`w-5 h-5 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? '' : 'rounded-full'}`}
+                              style={{ backgroundColor: color }}
+                            >
+                              <img src={getAvatarUrl(agentId)} alt={AGENT_NAMES[agentId]} className="w-full h-full" />
+                            </div>
+                            <span className={`text-xs text-white/60 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : 'font-medium'}`}>
+                              {AGENT_NAMES[agentId]}
+                            </span>
+                            {agent.isStreaming && (
+                              <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
+                            )}
+                            <svg 
+                              className={`w-3 h-3 ml-auto text-white/30 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </summary>
+                          
+                          <div className={`
+                            mt-1 p-4 space-y-3
+                            ${designMode === 'boxy' 
+                              ? 'bg-[#0a0a0a] border-x border-b border-white/[0.08]'
+                              : 'bg-white/[0.02] border-x border-b border-white/[0.06] rounded-b-lg'
+                            }
+                          `}>
+                            {/* Thinking section (collapsible) */}
+                            {thinking && (
+                              <details className="group/think">
+                                <summary className={`
+                                  flex items-center gap-1.5 cursor-pointer list-none text-[10px] text-white/30 hover:text-white/50
+                                  ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}
+                                `}>
+                                  <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <span>💭 {designMode === 'boxy' ? 'THINKING' : 'Thinking'}</span>
+                                </summary>
+                                <div className={`
+                                  mt-2 p-3 text-[11px] leading-[1.5] text-white/30 italic
+                                  ${designMode === 'boxy' 
+                                    ? 'bg-[#080808] border border-white/[0.04] font-mono text-[10px]'
+                                    : 'bg-white/[0.01] border border-white/[0.04] rounded'
+                                  }
+                                `}>
+                                  {thinking}
+                                </div>
+                              </details>
+                            )}
+                            
+                            {/* Clean answer */}
+                            <div className={`text-[13px] leading-[1.6] text-white/50 ${designMode === 'boxy' ? 'font-mono text-[12px]' : ''}`}>
+                              {cleanAnswer || (agent.isStreaming ? 'Thinking...' : '')}
+                              {agent.isStreaming && <span className="animate-pulse">▊</span>}
+                            </div>
+                          </div>
+                        </details>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                </details>
+              );
+            })()}
+
+            {/* ═══ THE ANSWER (Synthesizer) ═══ */}
+            {(() => {
+              const agent = agents.synthesizer;
+              const { thinking, answer: cleanAnswer } = parseThinkTags(agent.text);
+              const isLoading = !agent.text && !agent.isStreaming && AGENT_IDS.slice(0, 7).some(id => agents[id].isStreaming || agents[id].text);
+              const isStreaming = agent.isStreaming;
+              const hasAnswer = cleanAnswer.length > 0;
+              
+              return (
+                <div className={`
+                  p-6 transition-all duration-300
+                  ${designMode === 'boxy' 
+                    ? 'bg-gradient-to-b from-[#1a1612] to-[#0f0f0f] border-2 border-[#F15A29]/40'
+                    : 'bg-gradient-to-b from-[#F15A29]/10 to-transparent backdrop-blur-xl border-2 border-[#F15A29]/30 rounded-2xl'
+                  }
+                `}>
+                  {/* Header */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div 
+                      className={`w-10 h-10 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? '' : 'rounded-full'}`}
+                      style={{ backgroundColor: '#F15A29' }}
+                    >
+                      <img src={getAvatarUrl('synthesizer')} alt="Answer" className="w-full h-full" />
+                    </div>
+                    <div>
+                      <span className={`text-base ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-[#F15A29]' : 'font-semibold text-[#F15A29]'}`}>
+                        {designMode === 'boxy' ? 'ANSWER' : 'Answer'}
+                      </span>
+                      <p className={`text-[11px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
+                        {isLoading 
+                          ? (designMode === 'boxy' ? 'GATHERING PERSPECTIVES...' : 'Gathering perspectives...')
+                          : isStreaming 
+                            ? (designMode === 'boxy' ? 'SYNTHESIZING...' : 'Synthesizing...')
+                            : hasAnswer
+                              ? (designMode === 'boxy' ? 'FROM 7 PERSPECTIVES' : 'From 7 perspectives')
+                              : (designMode === 'boxy' ? 'WAITING...' : 'Waiting...')
+                        }
+                      </p>
+                    </div>
+                    {isStreaming && (
+                      <div className={`w-2 h-2 ml-auto ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
+                    )}
+                  </div>
+                  
+                  {/* Thinking section for synthesizer */}
+                  {thinking && (
+                    <details className="group/think mb-4" open={isStreaming && !cleanAnswer}>
+                      <summary className={`
+                        flex items-center gap-1.5 cursor-pointer list-none text-[10px] text-white/30 hover:text-white/50
+                        ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}
+                      `}>
+                        <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span>💭 {designMode === 'boxy' ? 'THINKING' : 'Thinking'}</span>
+                      </summary>
+                      <div className={`
+                        mt-2 p-3 text-[11px] leading-[1.5] text-white/30 italic max-h-[200px] overflow-y-auto
+                        ${designMode === 'boxy' 
+                          ? 'bg-[#0a0a0a] border border-white/[0.06] font-mono text-[10px]'
+                          : 'bg-black/20 border border-white/[0.06] rounded-lg'
+                        }
+                      `}>
+                        {thinking}
+                        {isStreaming && !cleanAnswer && <span className="animate-pulse">▊</span>}
+                      </div>
+                    </details>
+                  )}
+                  
+                  {/* Clean Answer Text */}
+                  <div className={`text-[15px] leading-[1.8] ${hasAnswer ? 'text-white/80' : 'text-white/40'} ${designMode === 'boxy' ? 'font-mono text-[14px]' : ''}`}>
+                    {cleanAnswer || (isLoading ? 'Analyzing your question from multiple angles...' : isStreaming ? '' : 'Waiting to synthesize...')}
+                    {isStreaming && cleanAnswer && <span className="animate-pulse">▊</span>}
+                  </div>
+                </div>
+              );
+            })()}
+            
           </div>
           
           {/* Input Bar */}
