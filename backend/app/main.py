@@ -67,17 +67,18 @@ async def websocket_endpoint(websocket: WebSocket):
             # Handle start_debate message
             if message.get("type") == "start_debate":
                 query = message.get("query", "").strip()
+                model = message.get("model", "pro")  # Default to 'pro' tier
                 
                 # Validate query is not empty
                 if not query:
                     await websocket.send_json(create_error("Query cannot be empty"))
                     continue
                     
-                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}...")
+                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model}")
 
                 try:
                     # Stream from ALL agents via orchestrator
-                    async for token in orchestrator.stream_debate(query):
+                    async for token in orchestrator.stream_debate(query, model):
                         await websocket.send_json(token)
 
                     # Send completion message

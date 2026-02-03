@@ -1,10 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
+import { useDebateStore } from '@/hooks/useDebateStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 // DiceBear Notionists avatar URL generator
 const getAvatarUrl = (agentId: AgentId) => 
   `https://api.dicebear.com/7.x/notionists/svg?seed=${agentId}&backgroundColor=transparent`;
+
+// Format tokens per second for display
+const formatTokPerSec = (tokenCount: number, elapsedMs: number): string => {
+  if (elapsedMs <= 0 || tokenCount <= 0) return '--';
+  const tokPerSec = (tokenCount / elapsedMs) * 1000;
+  if (tokPerSec >= 1000) return `${(tokPerSec / 1000).toFixed(1)}k`;
+  return tokPerSec.toFixed(0);
+};
 
 /**
  * DEBATE PAGE - LAYOUT SKELETON
@@ -41,6 +51,7 @@ export function DebatePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q') || '';
+  const modelTier = searchParams.get('model') || 'pro'; // Default to 'pro' if not specified
   
   // Design mode toggle (matches homepage)
   const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy');
@@ -49,11 +60,56 @@ export function DebatePage() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
   
+  // Store state
+  const agents = useDebateStore((state) => state.agents);
+  const phase = useDebateStore((state) => state.phase);
+  const isDebating = useDebateStore((state) => state.isDebating);
+  const connectionState = useDebateStore((state) => state.connectionState);
+  const tokensPerSecond = useDebateStore((state) => state.tokensPerSecond);
+  const totalTokens = useDebateStore((state) => state.totalTokens);
+  
+  // WebSocket connection
+  const { isReady, startDebateSession } = useWebSocket();
+  
+  // Track debate start time for tok/s calculation
+  const debateStartTime = useRef<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  
+  // Start debate when connected and query is present
+  useEffect(() => {
+    if (isReady && query && !isDebating && phase === 'idle') {
+      debateStartTime.current = Date.now();
+      startDebateSession(query, modelTier);
+    }
+  }, [isReady, query, modelTier, isDebating, phase, startDebateSession]);
+  
+  // Update elapsed time during debate
+  useEffect(() => {
+    if (!isDebating || !debateStartTime.current) return;
+    
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - (debateStartTime.current || Date.now()));
+    }, 100);
+    
+    return () => clearInterval(interval);
+  }, [isDebating]);
+  
   // Handle agent selection (from sidebar or center grid)
   const handleAgentClick = (agentId: AgentId) => {
     setSelectedAgent(agentId);
     setIsInspectorOpen(true);
   };
+  
+  // Format elapsed time as M:SS
+  const formatTime = (ms: number): string => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+  
+  // Calculate timeline progress (12 second max)
+  const timelineProgress = Math.min((elapsedMs / 12000) * 100, 100);
   
   // If no query, show redirect option
   if (!query) {
@@ -79,8 +135,8 @@ export function DebatePage() {
           TOP BAR - Logo, Status, Token Counter
           Height: 56px fixed
       ═══════════════════════════════════════════════════════════════ */}
-      <header className="h-14 flex-shrink-0 border-b-2 border-white/10 bg-[#0a0a0a]">
-        <div className="h-full px-4 flex items-center justify-between">
+      <header className="h-14 flex-shrink-0 border-b border-white/[0.06] bg-[#0a0a0a]">
+        <div className="h-full px-5 flex items-center justify-between">
           {/* Left: Logo + Design Toggle */}
           <div className="flex items-center gap-3">
             <button
@@ -89,9 +145,6 @@ export function DebatePage() {
             >
               <span className={`text-base font-bold tracking-widest ${designMode === 'boxy' ? 'font-mono' : ''}`}>PRISM</span>
             </button>
-            <div className="w-px h-5 bg-white/20" />
-            <span className={`text-[10px] uppercase tracking-widest text-white/40 ${designMode === 'boxy' ? 'font-mono' : ''}`}>DEBATE</span>
-            <div className="w-px h-5 bg-white/20" />
             {/* Design Mode Toggle */}
             <div className="flex items-center gap-1">
               <button
@@ -116,16 +169,29 @@ export function DebatePage() {
               </button>
             </div>
           </div>
-          
-          {/* Right: Status */}
+          {/* Right: Connection Status + Phase */}
           <div className="flex items-center gap-4">
-            <div className={`flex items-center gap-2 text-[10px] text-white/50 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-              <span>TOKENS:</span>
-              <span className="text-white/80">0</span>
-            </div>
+            {/* Phase Indicator */}
+            {phase !== 'idle' && (
+              <span className={`text-[10px] text-white/50 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                {phase}
+              </span>
+            )}
+            
+            {/* Connection Status */}
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 bg-green-500 animate-pulse ${designMode === 'round' ? 'rounded-full' : ''}`} />
-              <span className={`text-[10px] uppercase tracking-wider text-white/50 ${designMode === 'boxy' ? 'font-mono' : ''}`}>LIVE</span>
+              <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} ${
+                connectionState === 'connected' ? 'bg-emerald-500' :
+                connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                connectionState === 'error' ? 'bg-red-500' :
+                'bg-white/30'
+              }`} />
+              <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
+                {connectionState === 'connected' ? (designMode === 'boxy' ? 'LIVE' : 'Live') :
+                 connectionState === 'connecting' ? (designMode === 'boxy' ? 'CONNECTING' : 'Connecting') :
+                 connectionState === 'error' ? (designMode === 'boxy' ? 'ERROR' : 'Error') :
+                 (designMode === 'boxy' ? 'OFFLINE' : 'Offline')}
+              </span>
             </div>
           </div>
         </div>
@@ -141,9 +207,9 @@ export function DebatePage() {
             LEFT SIDEBAR - Agent Roster + Navigation
             Width: 240px (15-20% on large screens)
         ───────────────────────────────────────────────────────────── */}
-        <aside className={`w-60 flex-shrink-0 bg-[#0a0a0a] flex flex-col ${designMode === 'boxy' ? 'border-r-2 border-white/10' : 'border-r border-white/[0.08]'}`}>
+        <aside className={`w-60 flex-shrink-0 bg-[#0a0a0a] flex flex-col ${designMode === 'boxy' ? 'border-r border-white/[0.08]' : 'border-r border-white/[0.06]'}`}>
           {/* Back Navigation */}
-          <div className={`p-3 ${designMode === 'boxy' ? 'border-b-2 border-white/10' : 'border-b border-white/[0.08]'}`}>
+          <div className={`p-3 ${designMode === 'boxy' ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.06]'}`}>
             <button 
               onClick={() => navigate('/')}
               className={`flex items-center gap-2 text-white/40 hover:text-white text-xs uppercase tracking-wider transition-colors px-2 py-2 hover:bg-white/[0.05] w-full ${designMode === 'boxy' ? 'font-mono' : 'rounded-lg'}`}
@@ -164,6 +230,12 @@ export function DebatePage() {
               {AGENT_IDS.map((agentId) => {
                 const isSelected = selectedAgent === agentId;
                 const color = AGENT_COLORS[agentId];
+                const agent = agents[agentId];
+                const status = agent.isStreaming 
+                  ? (designMode === 'boxy' ? 'STREAMING...' : 'Streaming...')
+                  : agent.text 
+                    ? (designMode === 'boxy' ? 'COMPLETE' : 'Complete')
+                    : (designMode === 'boxy' ? 'WAITING...' : 'Waiting...');
                 
                 return (
                   <button
@@ -174,14 +246,14 @@ export function DebatePage() {
                       transition-all duration-150
                       ${designMode === 'round' ? 'rounded-lg' : ''}
                       ${isSelected 
-                        ? designMode === 'boxy' ? 'bg-white/10 border border-white/30' : 'bg-white/10 border border-white/20 rounded-lg'
-                        : designMode === 'boxy' ? 'hover:bg-white/[0.05] border border-transparent' : 'hover:bg-white/[0.05] border border-transparent rounded-lg'
+                        ? designMode === 'boxy' ? 'bg-white/[0.08]' : 'bg-white/[0.08]'
+                        : designMode === 'boxy' ? 'hover:bg-white/[0.04]' : 'hover:bg-white/[0.04]'
                       }
                     `}
                   >
                     {/* Avatar */}
                     <div 
-                      className={`w-7 h-7 flex-shrink-0 overflow-hidden ${designMode === 'boxy' ? 'border border-white/30' : 'rounded-full border-2 border-black/50'}`}
+                      className={`w-7 h-7 flex-shrink-0 overflow-hidden ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                       style={{ backgroundColor: color }}
                     >
                       <img 
@@ -197,15 +269,17 @@ export function DebatePage() {
                         {AGENT_NAMES[agentId]}
                       </p>
                       <p className={`text-[10px] text-white/30 truncate ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                        {designMode === 'boxy' ? 'STREAMING...' : 'Streaming...'}
+                        {status}
                       </p>
                     </div>
                     
                     {/* Active Indicator */}
-                    <div 
-                      className={`w-2 h-2 flex-shrink-0 animate-pulse ${designMode === 'round' ? 'rounded-full' : ''}`}
-                      style={{ backgroundColor: color }}
-                    />
+                    {agent.isStreaming && (
+                      <div 
+                        className={`w-2 h-2 flex-shrink-0 animate-pulse ${designMode === 'round' ? 'rounded-full' : ''}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -213,10 +287,21 @@ export function DebatePage() {
           </div>
           
           {/* Bottom Section */}
-          <div className={`p-3 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/[0.08]'}`}>
-            <div className={`flex items-center gap-2 px-2 py-1.5 text-white/30 text-[10px] uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-              <div className={`w-2 h-2 bg-green-500 animate-pulse ${designMode === 'round' ? 'rounded-full' : ''}`} />
-              <span>{designMode === 'boxy' ? '8 AGENTS ACTIVE' : '8 agents active'}</span>
+          <div className={`p-3 ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
+            <div className={`flex items-center gap-2 px-2 py-1.5 text-white/25 text-[10px] ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
+              <div className={`w-1.5 h-1.5 ${isDebating ? 'bg-emerald-500/80' : 'bg-white/30'} ${designMode === 'round' ? 'rounded-full' : ''}`} />
+              <span>
+                {(() => {
+                  const streamingCount = AGENT_IDS.filter(id => agents[id].isStreaming).length;
+                  const completedCount = AGENT_IDS.filter(id => agents[id].text && !agents[id].isStreaming).length;
+                  if (streamingCount > 0) {
+                    return designMode === 'boxy' ? `${streamingCount} STREAMING` : `${streamingCount} streaming`;
+                  } else if (completedCount > 0) {
+                    return designMode === 'boxy' ? `${completedCount}/8 COMPLETE` : `${completedCount}/8 complete`;
+                  }
+                  return designMode === 'boxy' ? '8 AGENTS' : '8 agents';
+                })()}
+              </span>
             </div>
           </div>
         </aside>
@@ -227,8 +312,8 @@ export function DebatePage() {
         ───────────────────────────────────────────────────────────── */}
         <main className="flex-1 flex flex-col min-w-0 bg-[#0a0a0a]">
           {/* Question Header - Pinned */}
-          <div className={`flex-shrink-0 p-4 ${designMode === 'boxy' ? 'border-b-2 border-white/10' : 'border-b border-white/[0.08]'}`}>
-            <div className={`p-4 ${designMode === 'boxy' ? 'bg-[#111] border-2 border-white/20' : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl'}`}>
+          <div className={`flex-shrink-0 p-4 ${designMode === 'boxy' ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.06]'}`}>
+            <div className={`p-4 ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08]' : 'bg-white/[0.03] border border-white/[0.06] rounded-xl'}`}>
               <p className={`text-center text-white/90 text-sm leading-relaxed ${designMode === 'boxy' ? 'font-mono' : ''}`}>
                 "{query}"
               </p>
@@ -242,6 +327,8 @@ export function DebatePage() {
               {AGENT_IDS.map((agentId) => {
                 const color = AGENT_COLORS[agentId];
                 const isSelected = selectedAgent === agentId;
+                const agent = agents[agentId];
+                const tokPerSec = formatTokPerSec(agent.tokenCount, elapsedMs);
                 
                 return (
                   <div 
@@ -249,17 +336,17 @@ export function DebatePage() {
                     onClick={() => handleAgentClick(agentId)}
                     className={`
                       min-h-[140px] p-4
-                      transition-all duration-150 cursor-pointer
+                      transition-all duration-200 cursor-pointer
                       ${designMode === 'boxy' 
-                        ? `bg-[#111] border-2 ${isSelected ? 'border-white/50 shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'border-white/20 hover:border-white/40 hover:bg-[#151515]'}`
-                        : `bg-white/5 backdrop-blur-xl border rounded-2xl ${isSelected ? 'border-white/30 shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'border-white/10 hover:border-white/20 hover:bg-white/[0.08]'}`
+                        ? `bg-[#0f0f0f] border ${isSelected ? 'border-white/40 bg-[#141414]' : 'border-white/[0.08] hover:border-white/20 hover:bg-[#121212]'}`
+                        : `bg-white/[0.03] backdrop-blur-xl border rounded-xl ${isSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]'}`
                       }
                     `}
                   >
                     {/* Agent Header */}
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2.5 mb-3">
                       <div 
-                        className={`w-6 h-6 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? 'border border-white/30' : 'rounded-full border-2 border-black/50'}`}
+                        className={`w-6 h-6 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                         style={{ backgroundColor: color }}
                       >
                         <img 
@@ -268,19 +355,18 @@ export function DebatePage() {
                           className="w-full h-full"
                         />
                       </div>
-                      <span className={`text-xs text-white/80 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : 'font-medium'}`}>
+                      <span className={`text-xs ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-white/70' : 'font-medium text-white/80'}`}>
                         {AGENT_NAMES[agentId]}
                       </span>
-                      <div 
-                        className={`w-1.5 h-1.5 animate-pulse ml-auto ${designMode === 'round' ? 'rounded-full' : ''}`}
-                        style={{ backgroundColor: color }}
-                      />
+                      <span className="ml-auto text-[10px] text-white/30 tabular-nums">
+                        {agent.isStreaming ? `${tokPerSec} tok/s` : agent.tokenCount > 0 ? `${agent.tokenCount} tokens` : '--'}
+                      </span>
                     </div>
                     
-                    {/* Response Text Area (placeholder) */}
-                    <div className={`text-xs text-white/50 leading-relaxed ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                      <span className="text-white/30">Analyzing the question and formulating response...</span>
-                    </div>
+                    {/* Response Text */}
+                    <p className={`text-[13px] leading-[1.6] text-white/50 ${designMode === 'boxy' ? 'font-mono text-[12px]' : ''}`}>
+                      {agent.text || (agent.isStreaming ? 'Starting...' : 'Waiting for response...')}
+                    </p>
                   </div>
                 );
               })}
@@ -288,14 +374,14 @@ export function DebatePage() {
           </div>
           
           {/* Input Bar */}
-          <div className={`flex-shrink-0 p-4 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/[0.08]'}`}>
-            <div className={`h-12 flex items-center px-4 ${designMode === 'boxy' ? 'bg-[#111] border-2 border-white/20' : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl'}`}>
+          <div className={`flex-shrink-0 p-4 ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
+            <div className={`h-11 flex items-center gap-3 px-4 ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08]' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
               <input 
                 type="text"
                 placeholder={designMode === 'boxy' ? 'ADD A CONSTRAINT...' : 'Add a constraint...'}
-                className={`flex-1 bg-transparent text-white/80 placeholder-white/30 text-xs outline-none ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}
+                className={`flex-1 bg-transparent text-white/70 placeholder-white/25 text-sm outline-none ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-xs' : ''}`}
               />
-              <button className={`w-8 h-8 flex items-center justify-center border text-white/50 hover:text-white hover:border-white/50 hover:bg-white/10 transition-all ${designMode === 'boxy' ? 'border-white/20' : 'border-white/10 rounded-lg'}`}>
+              <button className={`w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/60 transition-colors ${designMode === 'round' ? 'rounded' : ''}`}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -310,12 +396,12 @@ export function DebatePage() {
             Hidden by default, slides in on selection
         ───────────────────────────────────────────────────────────── */}
         {isInspectorOpen && selectedAgent && (
-          <aside className={`w-[360px] flex-shrink-0 bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-200 ${designMode === 'boxy' ? 'border-l-2 border-white/10' : 'border-l border-white/[0.08]'}`}>
+          <aside className={`w-[360px] flex-shrink-0 bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-200 ${designMode === 'boxy' ? 'border-l border-white/[0.08]' : 'border-l border-white/[0.06]'}`}>
             {/* Inspector Header */}
-            <div className={`h-14 flex-shrink-0 px-4 flex items-center justify-between ${designMode === 'boxy' ? 'border-b-2 border-white/10' : 'border-b border-white/[0.08]'}`}>
+            <div className={`h-14 flex-shrink-0 px-4 flex items-center justify-between ${designMode === 'boxy' ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.06]'}`}>
               <div className="flex items-center gap-3">
                 <div 
-                  className={`w-8 h-8 overflow-hidden ${designMode === 'boxy' ? 'border border-white/30' : 'rounded-full border-2 border-black/50'}`}
+                  className={`w-8 h-8 overflow-hidden ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                   style={{ backgroundColor: AGENT_COLORS[selectedAgent] }}
                 >
                   <img 
@@ -325,8 +411,8 @@ export function DebatePage() {
                   />
                 </div>
                 <div>
-                  <p className={`text-xs text-white/90 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : 'font-medium'}`}>{AGENT_NAMES[selectedAgent]}</p>
-                  <p className={`text-[10px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>{designMode === 'boxy' ? 'INSPECTOR' : 'Inspector'}</p>
+                  <p className={`text-sm text-white/80 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-xs' : 'font-medium'}`}>{AGENT_NAMES[selectedAgent]}</p>
+                  <p className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>{designMode === 'boxy' ? 'INSPECTOR' : 'Inspector'}</p>
                 </div>
               </div>
               <button 
@@ -334,7 +420,7 @@ export function DebatePage() {
                   setIsInspectorOpen(false);
                   setSelectedAgent(null);
                 }}
-                className={`text-white/40 hover:text-white p-1.5 border border-transparent hover:border-white/30 hover:bg-white/10 transition-all ${designMode === 'round' ? 'rounded-lg' : ''}`}
+                className={`text-white/30 hover:text-white/60 p-1.5 transition-colors ${designMode === 'round' ? 'rounded' : ''}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -347,35 +433,38 @@ export function DebatePage() {
               <div className="space-y-4">
                 {/* Full Response */}
                 <div>
-                  <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-2 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'FULL RESPONSE' : 'Full Response'}</p>
-                  <div className={`p-4 text-xs text-white/60 leading-relaxed min-h-[160px] ${designMode === 'boxy' ? 'bg-[#111] border-2 border-white/20 font-mono' : 'bg-white/5 border border-white/10 rounded-xl'}`}>
-                    Response content will stream here...
-                  </div>
-                </div>
-                
-                {/* Reasoning */}
-                <div>
-                  <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-2 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'REASONING' : 'Reasoning'}</p>
-                  <div className={`p-4 text-xs text-white/40 leading-relaxed min-h-[100px] ${designMode === 'boxy' ? 'bg-[#111] border-2 border-white/20 font-mono' : 'bg-white/5 border border-white/10 rounded-xl'}`}>
-                    Internal reasoning and thought process...
+                  <p className={`text-[10px] uppercase tracking-widest text-white/25 mb-2.5 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'RESPONSE' : 'Response'}</p>
+                  <div className={`p-4 text-[13px] text-white/50 leading-relaxed min-h-[160px] max-h-[300px] overflow-y-auto ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08] font-mono text-xs' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
+                    {agents[selectedAgent].text || 'Waiting for response...'}
                   </div>
                 </div>
                 
                 {/* Metadata */}
                 <div>
-                  <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-2 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'METADATA' : 'Metadata'}</p>
-                  <div className={`p-3 space-y-2 text-[10px] ${designMode === 'boxy' ? 'bg-[#111] border-2 border-white/20 font-mono' : 'bg-white/5 border border-white/10 rounded-xl'}`}>
+                  <p className={`text-[10px] uppercase tracking-widest text-white/25 mb-2.5 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'METADATA' : 'Metadata'}</p>
+                  <div className={`p-3 space-y-2.5 text-[11px] ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08] font-mono text-[10px]' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
                     <div className="flex justify-between">
                       <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Tokens' : 'Tokens'}</span>
-                      <span className="text-white/60">0</span>
+                      <span className="text-white/60">{agents[selectedAgent].tokenCount}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Latency' : 'Latency'}</span>
-                      <span className="text-white/60">--ms</span>
+                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Tok/s' : 'Tok/s'}</span>
+                      <span className="text-white/60">{formatTokPerSec(agents[selectedAgent].tokenCount, elapsedMs)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Status' : 'Status'}</span>
-                      <span className="text-white/60">{designMode === 'boxy' ? 'STREAMING' : 'Streaming'}</span>
+                      <span className="text-white/60">
+                        {agents[selectedAgent].isStreaming 
+                          ? (designMode === 'boxy' ? 'STREAMING' : 'Streaming')
+                          : agents[selectedAgent].text
+                            ? (designMode === 'boxy' ? 'COMPLETE' : 'Complete')
+                            : (designMode === 'boxy' ? 'WAITING' : 'Waiting')
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Phase' : 'Phase'}</span>
+                      <span className="text-white/60">{agents[selectedAgent].phase || phase}</span>
                     </div>
                   </div>
                 </div>
@@ -389,26 +478,36 @@ export function DebatePage() {
           BOTTOM BAR - Timeline + Cerebras Branding
           Height: 48px fixed
       ═══════════════════════════════════════════════════════════════ */}
-      <footer className={`h-12 flex-shrink-0 bg-[#0a0a0a] px-4 flex items-center justify-between ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/[0.08]'}`}>
+      <footer className={`h-12 flex-shrink-0 bg-[#0a0a0a] px-5 flex items-center justify-between ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
         {/* Timeline */}
-        <div className="flex-1 flex items-center gap-3">
-          <span className={`text-[10px] text-white/30 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>0:00</span>
-          <div className={`flex-1 h-1 bg-white/10 relative ${designMode === 'round' ? 'rounded-full' : ''}`}>
-            <div className={`absolute left-0 top-0 h-full w-[30%] bg-white/40 ${designMode === 'round' ? 'rounded-full' : ''}`} />
+        <div className="flex-1 flex items-center gap-3 max-w-xl">
+          <span className={`text-[10px] text-white/25 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>{formatTime(elapsedMs)}</span>
+          <div className={`flex-1 h-1 bg-white/[0.06] relative ${designMode === 'round' ? 'rounded-full' : ''}`}>
+            <div 
+              className={`absolute left-0 top-0 h-full bg-white/30 transition-all duration-100 ${designMode === 'round' ? 'rounded-full' : ''}`} 
+              style={{ width: `${timelineProgress}%` }}
+            />
           </div>
-          <span className={`text-[10px] text-white/30 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>0:12</span>
+          <span className={`text-[10px] text-white/25 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>0:12</span>
         </div>
         
-        {/* Cerebras Branding */}
-        <div className="flex items-center gap-3 ml-6">
-          <img
-            src="/cerebras-logo.svg"
-            alt="Cerebras"
-            className="w-5 h-5 opacity-70"
-          />
-          <span className={`text-[10px] text-white/50 uppercase tracking-widest ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-            CEREBRAS
-          </span>
+        {/* Cerebras Branding + Metrics */}
+        <div className="flex items-center gap-4 ml-8">
+          {totalTokens > 0 && (
+            <span className={`text-[10px] text-white/40 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+              {totalTokens} tokens
+            </span>
+          )}
+          <div className="flex items-center gap-2">
+            <img
+              src="/cerebras-logo.svg"
+              alt="Cerebras"
+              className="w-4 h-4 opacity-50"
+            />
+            <span className={`text-[10px] text-white/30 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+              Cerebras
+            </span>
+          </div>
         </div>
       </footer>
       

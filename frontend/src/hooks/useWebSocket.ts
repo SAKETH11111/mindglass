@@ -154,11 +154,11 @@ export function useWebSocket() {
   }, [connect, setError]);
 
   // Start a debate by sending start_debate message
-  const startDebateSession = useCallback((query: string) => {
+  const startDebateSession = useCallback((query: string, model?: string) => {
     // Update local state first
     startDebate(query);
-    // Send to server
-    return sendMessage({ type: 'start_debate', query });
+    // Send to server with model selection
+    return sendMessage({ type: 'start_debate', query, model: model || 'pro' });
   }, [sendMessage, startDebate]);
 
   return { sendMessage, isReady, retry, startDebateSession };

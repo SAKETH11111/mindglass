@@ -1,9 +1,6 @@
 import { useState, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { Send, AlertCircle, Loader2 } from 'lucide-react'
-import { useWebSocket } from './hooks/useWebSocket'
-import { useDebateStore } from './hooks/useDebateStore'
-import type { StartDebateMessage } from './types/websocket'
+import { Send } from 'lucide-react'
 import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from './types/agent'
 import type { AgentId } from './types/agent'
 import { V1Page } from '@/pages/v1/V1Page'
@@ -36,21 +33,13 @@ function HomePage() {
   const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy')
   const navigate = useNavigate()
 
-  const { sendMessage, isReady } = useWebSocket()
-  const { agentText, isStreaming, currentAgentId, clearResponse, error } = useDebateStore()
-
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault()
     if (!inputValue.trim()) return
 
-    // Navigate to debate page with query
-    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}`)
-  }, [inputValue, navigate])
-
-  // Use centralized agent color constants
-  const agentId = (currentAgentId as AgentId) || 'analyst'
-  const agentName = AGENT_NAMES[agentId] || 'Analyst'
-  const agentColor = AGENT_COLORS[agentId] || '#4ECDC4'
+    // Navigate to debate page with query and selected model tier
+    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}`)
+  }, [inputValue, navigate, selectedTier])
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
@@ -143,20 +132,6 @@ function HomePage() {
             </p>
           </div>
 
-          {/* Error Banner */}
-          {error && (
-            <div className={`mb-6 p-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 ${
-              designMode === 'boxy'
-                ? 'bg-red-950/50 border-2 border-red-500/50'
-                : 'bg-red-500/10 backdrop-blur-xl border border-red-500/30 rounded-xl'
-            }`}>
-              <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-              <p className={`text-red-400 text-sm ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                {designMode === 'boxy' ? `[ERROR] ${error}` : error}
-              </p>
-            </div>
-          )}
-
           {/* Input Card */}
           <div
             className={`
@@ -177,8 +152,7 @@ function HomePage() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
-                  placeholder={!isReady ? "Connecting..." : isStreaming ? "Agent is responding..." : "What decision do you need help with?"}
-                  disabled={!isReady || isStreaming}
+                  placeholder="What decision do you need help with?"
                   className={`
                     flex-1 bg-transparent text-white outline-none text-base py-2
                     disabled:opacity-60
@@ -212,7 +186,6 @@ function HomePage() {
                   <ModelSelector
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}
-                    disabled={isStreaming}
                     designMode={designMode}
                   />
                 </div>
@@ -229,7 +202,6 @@ function HomePage() {
                       const avatar = AGENT_AVATARS[agent]
                       const color = AGENT_COLORS[agent]
                       const name = AGENT_NAMES[agent]
-                      const isActive = currentAgentId === agent
                       
                       return (
                         <div key={agent} className="group relative">
@@ -238,8 +210,8 @@ function HomePage() {
                               w-7 h-7 overflow-hidden
                               transition-all duration-200 cursor-pointer
                               ${designMode === 'boxy'
-                                ? `border border-white/30 ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}`
-                                : `border-2 border-black/50 rounded-full ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}`
+                                ? 'border border-white/30 hover:z-10 hover:scale-110'
+                                : 'border-2 border-black/50 rounded-full hover:z-10 hover:scale-110'
                               }
                             `}
                             style={{ backgroundColor: color }}
@@ -274,22 +246,18 @@ function HomePage() {
                   {/* Submit button */}
                   <button
                     type="submit"
-                    disabled={!inputValue.trim() || !isReady || isStreaming}
+                    disabled={!inputValue.trim()}
                     className={`
                       flex items-center justify-center
                       w-8 h-8
                       transition-all duration-200
-                      ${inputValue.trim() && isReady && !isStreaming
+                      ${inputValue.trim()
                         ? `bg-white text-black hover:bg-white/90 ${designMode === 'round' ? 'rounded-lg' : ''}`
                         : `bg-white/10 text-white/30 cursor-not-allowed border ${designMode === 'round' ? 'rounded-lg border-white/10' : 'border-white/20'}`
                       }
                     `}
                   >
-                    {isStreaming ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
+                    <Send className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -297,93 +265,29 @@ function HomePage() {
           </div>
 
           {/* Example prompts */}
-          {!agentText && (
-            <div className="flex flex-wrap justify-center gap-2 animate-in fade-in duration-700 delay-500">
-              {[
-                "Is remote work better for productivity?",
-                "Should my startup focus on growth or profit?",
-                "Should I buy Tesla stock right now?",
-                "Is it time to hire or automate?",
-              ].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => setInputValue(prompt)}
-                  className={`
-                    px-4 py-2 text-sm transition-all duration-200
-                    ${designMode === 'boxy'
-                      ? 'font-mono tracking-wide bg-[#111] border border-white/20 text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]'
-                      : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-full text-white/60 hover:text-white hover:border-white/30 hover:bg-white/10'
-                    }
-                  `}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Agent Response */}
-          {(currentAgentId || agentText) && (
-            <div className={`p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 ${
-              designMode === 'boxy'
-                ? 'bg-[#111] border-2 border-white/30'
-                : 'backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl'
-            }`}>
-              {/* Agent header */}
-              <div className="flex items-center gap-3 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setIsAgentsPanelOpen(true)}
-                  className={`w-10 h-10 overflow-hidden border-2 hover:scale-105 transition-transform cursor-pointer ${
-                    designMode === 'round' ? 'rounded-full' : ''
-                  }`}
-                  style={{ backgroundColor: agentColor, borderColor: agentColor }}
-                >
-                  {currentAgentId && (
-                    <img 
-                      src={AGENT_AVATARS[currentAgentId]} 
-                      alt={agentName} 
-                      className="w-full h-full" 
-                    />
-                  )}
-                </button>
-                <div className="flex flex-col">
-                  <span
-                    className={`${designMode === 'boxy' ? 'font-mono uppercase tracking-widest' : 'font-semibold uppercase tracking-wider'} text-sm`}
-                    style={{ color: agentColor }}
-                  >
-                    {agentName}
-                  </span>
-                  {isStreaming && (
-                    <span className={`text-white/50 text-xs animate-pulse ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                      {designMode === 'boxy' ? 'TYPING...' : 'typing...'}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Response container */}
-              <div className="max-h-[300px] overflow-y-auto pr-2">
-                <p className={`text-white leading-relaxed whitespace-pre-wrap text-sm ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                  {agentText}
-                  {isStreaming && (
-                    <span className="inline-block w-2 h-4 bg-white ml-1 animate-pulse" />
-                  )}
-                </p>
-              </div>
-
-              {/* Token count */}
-              {agentText.length > 0 && (
-                <div className={`flex justify-end pt-2 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/10'}`}>
-                  <span className={`text-white/50 text-xs ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                    {agentText.length} {designMode === 'boxy' ? 'chars' : 'characters'}
-                    {isStreaming && (designMode === 'boxy' ? ' [streaming]' : ' • streaming')}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="flex flex-wrap justify-center gap-2 animate-in fade-in duration-700 delay-500">
+            {[
+              "Is remote work better for productivity?",
+              "Should my startup focus on growth or profit?",
+              "Should I buy Tesla stock right now?",
+              "Is it time to hire or automate?",
+            ].map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => setInputValue(prompt)}
+                className={`
+                  px-4 py-2 text-sm transition-all duration-200
+                  ${designMode === 'boxy'
+                    ? 'font-mono tracking-wide bg-[#111] border border-white/20 text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]'
+                    : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-full text-white/60 hover:text-white hover:border-white/30 hover:bg-white/10'
+                  }
+                `}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
 
         </div>
       </main>
@@ -408,7 +312,6 @@ function HomePage() {
       <AgentsPanel
         isOpen={isAgentsPanelOpen}
         onClose={() => setIsAgentsPanelOpen(false)}
-        activeAgentId={currentAgentId}
         designMode={designMode}
       />
     </div>
