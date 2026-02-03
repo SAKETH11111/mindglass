@@ -26,7 +26,6 @@ function HomePage() {
   const [isFocused, setIsFocused] = useState(false)
   const [isAgentsPanelOpen, setIsAgentsPanelOpen] = useState(false)
   const [selectedTier, setSelectedTier] = useState<ModelTier>('fast')
-  const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy')
   const navigate = useNavigate()
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
@@ -48,33 +47,8 @@ function HomePage() {
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
         <div className="px-6 py-3">
-          <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-            {/* Left: Design Toggle */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-white/30 font-mono uppercase tracking-wider">Design:</span>
-              <button
-                onClick={() => setDesignMode('boxy')}
-                className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all ${
-                  designMode === 'boxy'
-                    ? 'bg-white text-black'
-                    : 'bg-transparent text-white/50 border border-white/20 hover:text-white/70'
-                }`}
-              >
-                Boxy
-              </button>
-              <button
-                onClick={() => setDesignMode('round')}
-                className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all ${
-                  designMode === 'round'
-                    ? 'bg-white text-black'
-                    : 'bg-transparent text-white/50 border border-white/20 hover:text-white/70'
-                }`}
-              >
-                Round
-              </button>
-            </div>
-
-            {/* Right: GitHub Link */}
+          <div className="max-w-[1600px] mx-auto flex items-center justify-end">
+            {/* GitHub Link */}
             <a
               href="https://github.com"
               target="_blank"
@@ -87,7 +61,7 @@ function HomePage() {
             </a>
           </div>
         </div>
-        
+
         {/* Bottom gradient fade */}
         <div className="h-12 bg-gradient-to-b from-black/20 to-transparent pointer-events-none" />
       </header>
@@ -97,34 +71,20 @@ function HomePage() {
         <div className="w-full max-w-2xl space-y-8">
           {/* Title */}
           <div className="text-center space-y-4">
-            {designMode === 'boxy' ? (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
-                <DotMatrixText
-                  text="PRISM"
-                  dotWidth={16}
-                  dotHeight={14}
-                  dotGap={4}
-                  letterGap={24}
-                  revealDelay={35}
-                  activeColor="#ffffff"
-                  inactiveColor="rgba(255,255,255,0.08)"
-                />
-              </div>
-            ) : (
-              <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
-                <span className="text-white drop-shadow-[0_0_60px_rgba(255,255,255,0.3)]">
-                  Prism
-                </span>
-              </h1>
-            )}
-            <p className={`text-base max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 ${
-              designMode === 'boxy' ? 'text-white/60 font-mono tracking-wide' : 'text-white/70'
-            }`}>
-              {designMode === 'boxy' ? (
-                <>8 AI PERSPECTIVES ANALYZE YOUR DECISION — <span className="text-white">INSTANTLY</span></>
-              ) : (
-                <>8 AI perspectives analyze your decision. <span className="text-white font-semibold">Instantly.</span></>
-              )}
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
+              <DotMatrixText
+                text="PRISM"
+                dotWidth={16}
+                dotHeight={14}
+                dotGap={4}
+                letterGap={24}
+                revealDelay={35}
+                activeColor="#ffffff"
+                inactiveColor="rgba(255,255,255,0.08)"
+              />
+            </div>
+            <p className="text-base max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 text-white/60 font-mono tracking-wide">
+              8 AI PERSPECTIVES ANALYZE YOUR DECISION — <span className="text-white">INSTANTLY</span>
             </p>
           </div>
 
@@ -133,10 +93,8 @@ function HomePage() {
             className={`
               p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300
               transition-all duration-200
-              ${designMode === 'boxy'
-                ? `bg-[#111] border-2 border-white/30 ${isFocused ? 'border-white/60 shadow-[0_0_40px_rgba(255,255,255,0.1)]' : ''}`
-                : `backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl ${isFocused ? 'border-white/30 shadow-[0_0_30px_rgba(255,255,255,0.1)]' : ''}`
-              }
+              bg-[#111] border-2 border-white/30
+              ${isFocused ? 'border-white/60 shadow-[0_0_40px_rgba(255,255,255,0.1)]' : ''}
             `}
           >
             <form onSubmit={handleSubmit}>
@@ -149,43 +107,36 @@ function HomePage() {
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
                   placeholder="What decision do you need help with?"
-                  className={`
+                  className="
                     flex-1 bg-transparent text-white outline-none text-base py-2
                     disabled:opacity-60
-                    ${designMode === 'boxy'
-                      ? 'placeholder-white/30 tracking-wide font-mono'
-                      : 'placeholder-white/40 font-sans'
-                    }
-                  `}
+                    placeholder-white/30 tracking-wide font-mono
+                  "
                 />
               </div>
-              
+
               {/* Bottom bar with icons and submit */}
-              <div className={`flex items-center justify-between mt-3 pt-3 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/10'}`}>
+              <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-white/10">
                 {/* Left side - attach button and model selector */}
                 <div className="flex items-center gap-2">
                   {/* Attach button */}
                   <button
                     type="button"
-                    className={`w-8 h-8 flex items-center justify-center border text-white/50 hover:text-white transition-all duration-200 ${
-                      designMode === 'boxy'
-                        ? 'border-white/20 hover:border-white/50 hover:bg-white/10'
-                        : 'border-white/10 hover:border-white/30 hover:bg-white/5 rounded-lg'
-                    }`}
+                    className="w-8 h-8 flex items-center justify-center border text-white/50 hover:text-white transition-all duration-200 border-white/20 hover:border-white/50 hover:bg-white/10"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
                   </button>
-                  
+
                   {/* Model Selector */}
                   <ModelSelector
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}
-                    designMode={designMode}
+                    designMode="boxy"
                   />
                 </div>
-                
+
                 {/* Right side - agent avatars and submit */}
                 <div className="flex items-center gap-3">
                   {/* Agent avatars - clickable to open panel */}
@@ -202,14 +153,11 @@ function HomePage() {
                       return (
                         <div key={agent} className="group relative">
                           <div
-                            className={`
+                            className="
                               w-6 h-6 overflow-hidden
                               transition-all duration-200 cursor-pointer
-                              ${designMode === 'boxy'
-                                ? 'border border-white/30 hover:z-10 hover:scale-110'
-                                : 'border-2 border-black/50 rounded-full hover:z-10 hover:scale-110'
-                              }
-                            `}
+                              border border-white/30 hover:z-10 hover:scale-110
+                            "
                             style={{ backgroundColor: color }}
                           >
                             <img src={avatar} alt={name} className="w-full h-full" />
@@ -217,14 +165,13 @@ function HomePage() {
 
                           {/* Tooltip */}
                           <div
-                            className={`
+                            className="
                               absolute -top-8 left-1/2 -translate-x-1/2
                               px-2 py-1 text-[10px] font-medium
                               bg-black/80 backdrop-blur-xl border border-white/10 text-white
                               opacity-0 group-hover:opacity-100 transition-opacity
                               whitespace-nowrap pointer-events-none z-20
-                              ${designMode === 'round' ? 'rounded-lg' : ''}
-                            `}
+                            "
                           >
                             {name}
                           </div>
@@ -232,13 +179,11 @@ function HomePage() {
                       )
                     })}
                     {/* +4 more indicator */}
-                    <div className={`w-6 h-6 flex items-center justify-center bg-white/10 text-[9px] text-white font-medium hover:bg-white/20 transition-colors ${
-                      designMode === 'boxy' ? 'border border-white/30' : 'border-2 border-black/50 rounded-full'
-                    }`}>
+                    <div className="w-6 h-6 flex items-center justify-center bg-white/10 text-[9px] text-white font-medium hover:bg-white/20 transition-colors border border-white/30">
                       +4
                     </div>
                   </button>
-                  
+
                   {/* Submit button */}
                   <button
                     type="submit"
@@ -248,8 +193,8 @@ function HomePage() {
                       w-8 h-8
                       transition-all duration-200
                       ${inputValue.trim()
-                        ? `bg-white text-black hover:bg-white/90 ${designMode === 'round' ? 'rounded-lg' : ''}`
-                        : `bg-white/10 text-white/30 cursor-not-allowed border ${designMode === 'round' ? 'rounded-lg border-white/10' : 'border-white/20'}`
+                        ? 'bg-white text-black hover:bg-white/90'
+                        : 'bg-white/10 text-white/30 cursor-not-allowed border border-white/20'
                       }
                     `}
                   >
@@ -272,13 +217,10 @@ function HomePage() {
                 key={prompt}
                 type="button"
                 onClick={() => setInputValue(prompt)}
-                className={`
+                className="
                   px-4 py-2 text-sm transition-all duration-200
-                  ${designMode === 'boxy'
-                    ? 'font-mono tracking-wide bg-[#111] border border-white/20 text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]'
-                    : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-full text-white/60 hover:text-white hover:border-white/30 hover:bg-white/10'
-                  }
-                `}
+                  font-mono tracking-wide bg-[#111] border border-white/20 text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]
+                "
               >
                 {prompt}
               </button>
@@ -308,7 +250,7 @@ function HomePage() {
       <AgentsPanel
         isOpen={isAgentsPanelOpen}
         onClose={() => setIsAgentsPanelOpen(false)}
-        designMode={designMode}
+        designMode="boxy"
       />
     </div>
   )
@@ -321,7 +263,7 @@ function App() {
       <Routes>
         {/* Root - Home page */}
         <Route path="/" element={<HomePage />} />
-        
+
         {/* Debate Canvas - Main experience */}
         <Route path="/debate" element={<DebatePage />} />
 
