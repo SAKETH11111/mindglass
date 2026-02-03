@@ -85,7 +85,6 @@ export function DebatePage() {
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const connectionState = useDebateStore((state) => state.connectionState);
-  const tokensPerSecond = useDebateStore((state) => state.tokensPerSecond);
   const totalTokens = useDebateStore((state) => state.totalTokens);
   
   // WebSocket connection

@@ -75,7 +75,7 @@ export function DotMatrixText({
   const [revealedColumns, setRevealedColumns] = useState(0)
 
   // Build column-based structure for left-to-right animation
-  const { columns, totalColumns } = useMemo(() => {
+  const { totalColumns } = useMemo(() => {
     const letters = text.split('')
     const cols: { hasDot: boolean; letterIndex: number; row: number; col: number }[][] = []
 

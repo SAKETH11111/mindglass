@@ -89,12 +89,14 @@ export function useWebSocket() {
               // New phased streaming message - set current phase name
               console.log(`Phase ${data.phase} started: ${data.name}`);
               // Set phase using the numeric phase to named phase mapping
-              const phaseNames: Record<number, string> = {
+              const phaseNames: Record<number, 'dispatch' | 'conflict' | 'synthesis' | 'convergence'> = {
                 1: 'dispatch',
                 2: 'conflict', 
-                3: 'synthesis'
+                3: 'synthesis',
+                4: 'convergence'
               };
-              setPhase(phaseNames[data.phase] || 'dispatch', []);
+              const mappedPhase = phaseNames[data.phase] || 'dispatch';
+              setPhase(mappedPhase, []);
               break;
             }
 
@@ -174,5 +176,11 @@ export function useWebSocket() {
     return sendMessage({ type: 'start_debate', query, model: model || 'pro' });
   }, [sendMessage, startDebate]);
 
-  return { sendMessage, isReady, retry, startDebateSession };
+  // Inject a constraint mid-debate (PRD: Interrupt & Inject feature)
+  const injectConstraint = useCallback((constraint: string) => {
+    console.log('Injecting constraint:', constraint);
+    return sendMessage({ type: 'inject_constraint', constraint });
+  }, [sendMessage]);
+
+  return { sendMessage, isReady, retry, startDebateSession, injectConstraint };
 }

@@ -90,6 +90,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"[{datetime.now().isoformat()}] {error_msg}")
                     await websocket.send_json(create_error(error_msg))
 
+            elif message.get("type") == "inject_constraint":
+                # PRD Feature: Interrupt & Inject constraint mid-debate
+                constraint = message.get("constraint", "").strip()
+                if constraint:
+                    print(f"[{datetime.now().isoformat()}] Constraint injected: {constraint}")
+                    # Store constraint in orchestrator's blackboard for next agent context
+                    orchestrator.blackboard["_user_constraint"] = f"USER CONSTRAINT: {constraint}"
+                    # Acknowledge the constraint injection
+                    await websocket.send_json({
+                        "type": "constraint_acknowledged",
+                        "constraint": constraint,
+                        "timestamp": int(datetime.now().timestamp() * 1000)
+                    })
+                else:
+                    await websocket.send_json(create_error("Constraint cannot be empty"))
+
             else:
                 # Unknown message type
                 await websocket.send_json(create_error(f"Unknown message type: {message.get('type')}"))
