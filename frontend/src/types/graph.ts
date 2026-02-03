@@ -14,7 +14,7 @@ export interface GraphNode {
   isStreaming: boolean; // Currently streaming
 }
 
-export type EdgeType = 'supports' | 'refutes' | 'depends';
+export type EdgeType = 'supports' | 'refutes' | 'depends' | 'constraint';
 
 export interface GraphEdge {
   id: string; // Unique edge ID
@@ -28,10 +28,12 @@ export const EDGE_COLORS: Record<EdgeType, string> = {
   supports: '#22C55E', // Green
   refutes: '#EF4444', // Red  
   depends: '#3B82F6', // Blue
+  constraint: '#888888', // Gray for user constraints
 } as const;
 
 export const EDGE_STYLES: Record<EdgeType, { strokeWidth: number; dashArray?: string }> = {
   supports: { strokeWidth: 2 },
   refutes: { strokeWidth: 2 },
   depends: { strokeWidth: 1.5, dashArray: '5,5' },
+  constraint: { strokeWidth: 2, dashArray: '3,3' },
 } as const;

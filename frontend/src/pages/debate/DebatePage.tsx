@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import { Send } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -181,8 +182,6 @@ export function DebatePage() {
   const { isReady, startDebateSession, injectConstraint } = useWebSocket();
 
   // User constraint state from store
-  const addConstraint = useDebateStore((state) => state.addConstraint);
-  const setUserProxyNode = useDebateStore((state) => state.setUserProxyNode);
   const constraints = useDebateStore((state) => state.constraints);
 
   // Track debate start time for tok/s calculation
@@ -267,29 +266,13 @@ export function DebatePage() {
     console.log('[Inject] Processing constraint:', constraint);
 
     try {
-      // ALWAYS add constraint locally for immediate UI feedback
-      console.log('[Inject] Adding constraint to store');
-      addConstraint(constraint);
-
-      // Try to send to backend (may fail if debate complete)
+      // Send to backend; UI updates on acknowledgment to avoid duplicates
       console.log('[Inject] Sending to backend...');
       const success = injectConstraint(constraint);
       console.log('[Inject] Backend send result:', success);
 
-      // Create UserProxy node for visualization
-      setUserProxyNode({
-        id: `user-${Date.now()}`,
-        text: constraint,
-        timestamp: Date.now(),
-      });
-
       // Clear input
       setConstraintInput('');
-
-      // Auto-hide UserProxy node after 5 seconds
-      setTimeout(() => {
-        setUserProxyNode(null);
-      }, 5000);
     } catch (error) {
       console.error('[Inject] Failed to inject constraint:', error);
     } finally {
@@ -366,14 +349,19 @@ export function DebatePage() {
               </button>
             </div>
           </div>
-          {/* Right: Connection Status + Phase */}
+          {/* Right: Cerebras Branding + Connection Status */}
           <div className="flex items-center gap-4">
-            {/* Phase Indicator */}
-            {phase !== 'idle' && (
-              <span className={`text-[10px] text-white/50 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                {phase}
+            {/* Cerebras Logo + Name */}
+            <div className="flex items-center gap-2">
+              <img
+                src="/cerebras-logo.svg"
+                alt="Cerebras"
+                className="w-4 h-4 opacity-60"
+              />
+              <span className={`text-[10px] text-white/40 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                Cerebras
               </span>
-            )}
+            </div>
 
             {/* Connection Status */}
             <div className="flex items-center gap-2">
@@ -821,34 +809,62 @@ export function DebatePage() {
 
           </div>
 
-          {/* Input Bar - PRD: Interrupt & Inject */}
-          <div className={`flex-shrink-0 p-4 ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
-            <form onSubmit={handleInjectConstraint} className={`h-11 flex items-center gap-3 px-4 ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08]' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
-              <input
-                type="text"
-                value={constraintInput}
-                onChange={(e) => setConstraintInput(e.target.value)}
-                placeholder={designMode === 'boxy' ? 'ADD A CONSTRAINT...' : 'Add a constraint...'}
-                disabled={!isReady || isInjecting}
-                className={`flex-1 bg-transparent text-white/70 placeholder-white/25 text-sm outline-none disabled:opacity-50 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-xs' : ''}`}
-              />
-              <button
-                type="submit"
-                disabled={!constraintInput.trim() || !isReady || isInjecting}
-                className={`w-7 h-7 flex items-center justify-center transition-colors ${designMode === 'round' ? 'rounded' : ''} ${
-                  constraintInput.trim() && isReady && !isInjecting
-                    ? 'text-white/70 hover:text-white hover:bg-white/10'
-                    : 'text-white/30 cursor-not-allowed'
-                }`}
-              >
-                {isInjecting ? (
-                  <div className="w-3 h-3 border-2 border-white/30 border-t-white/70 rounded-full animate-spin" />
-                ) : (
+          {/* Input Bar - PRD: Interrupt & Inject (Floating Style) */}
+          <div className="flex-shrink-0 p-4">
+            <form onSubmit={handleInjectConstraint} className={`p-3 pb-2 transition-all duration-200 ${
+              designMode === 'boxy'
+                ? 'bg-[#111] border-2 border-white/30'
+                : 'backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl'
+            }`}>
+              {/* Input row */}
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  value={constraintInput}
+                  onChange={(e) => setConstraintInput(e.target.value)}
+                  placeholder={designMode === 'boxy' ? 'ADD A CONSTRAINT...' : 'Add a constraint...'}
+                  disabled={!isReady || isInjecting}
+                  className={`flex-1 bg-transparent text-white outline-none text-sm py-2 disabled:opacity-60 ${
+                    designMode === 'boxy'
+                      ? 'placeholder-white/30 tracking-wide font-mono'
+                      : 'placeholder-white/40 font-sans'
+                  }`}
+                />
+              </div>
+              
+              {/* Bottom bar with attach and submit */}
+              <div className={`flex items-center justify-between mt-2 pt-2 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/10'}`}>
+                {/* Left side - attach button */}
+                <button
+                  type="button"
+                  className={`w-8 h-8 flex items-center justify-center border text-white/50 hover:text-white transition-all duration-200 ${
+                    designMode === 'boxy'
+                      ? 'border-white/20 hover:border-white/50 hover:bg-white/10'
+                      : 'border-white/10 hover:border-white/30 hover:bg-white/5 rounded-lg'
+                  }`}
+                >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>
-                )}
-              </button>
+                </button>
+                
+                {/* Right side - submit button */}
+                <button
+                  type="submit"
+                  disabled={!constraintInput.trim() || !isReady || isInjecting}
+                  className={`flex items-center justify-center w-8 h-8 transition-all duration-200 ${
+                    constraintInput.trim() && isReady && !isInjecting
+                      ? `bg-white text-black hover:bg-white/90 ${designMode === 'round' ? 'rounded-lg' : ''}`
+                      : `bg-white/10 text-white/30 cursor-not-allowed border ${designMode === 'round' ? 'rounded-lg border-white/10' : 'border-white/20'}`
+                  }`}
+                >
+                  {isInjecting ? (
+                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </form>
 
             {/* DEBUG: Hardcoded test to verify rendering */}

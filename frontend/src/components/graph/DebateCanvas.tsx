@@ -121,15 +121,17 @@ const getDebatePosition = (
 export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvasProps) {
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
+  const constraints = useDebateStore((state) => state.constraints);
   
   const ALL_AGENTS: AgentId[] = [...ROUND_1_AGENTS, ...ROUND_2_AGENTS, ...ROUND_4_AGENTS, ...ROUND_5_AGENTS];
   
   // Generate nodes
   const generateNodes = useCallback((): Node<AgentThoughtNodeData>[] => {
     const activeAgents = ALL_AGENTS.filter(id => agents[id].text || agents[id].isStreaming);
-    if (activeAgents.length === 0) return [];
+    const nodes: Node<AgentThoughtNodeData>[] = [];
     
-    return activeAgents.map((agentId) => {
+    // Add agent nodes
+    activeAgents.forEach((agentId) => {
       const agent = agents[agentId];
       const position = getDebatePosition(agentId);
       
@@ -139,7 +141,7 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
       if (ROUND_4_AGENTS.includes(agentId)) nodeRound = 4;
       if (ROUND_5_AGENTS.includes(agentId)) nodeRound = 5;
       
-      return {
+      nodes.push({
         id: `node-${agentId}`,
         type: 'agentThought',
         position,
@@ -152,9 +154,37 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
           designMode,
         },
         draggable: true,
-      };
+      });
     });
-  }, [agents, designMode]);
+
+    // Add UserProxy node if constraints exist
+    if (constraints.length > 0) {
+      const canvasWidth = 1400;
+      const centerX = canvasWidth / 2;
+      const latestConstraint = constraints[constraints.length - 1];
+      // Position UserProxy to the right side of the canvas
+      nodes.push({
+        id: 'node-userproxy',
+        type: 'agentThought',
+        position: {
+          x: centerX + CARD_WIDTH + HORIZONTAL_GAP * 2,
+          y: 40 + CARD_HEIGHT + VERTICAL_GAP / 2,
+        },
+        data: {
+          agentId: 'userproxy' as AgentId,
+          text: latestConstraint,
+          isStreaming: false,
+          phase: 0,
+          tokensPerSecond: 0,
+          designMode,
+          isUserProxy: true,
+        },
+        draggable: true,
+      });
+    }
+
+    return nodes;
+  }, [agents, designMode, constraints]);
   
   // Generate edges showing semantic debate relationships (per PRD)
   // - Red "refutes" edges: Challengers attacking openers
@@ -233,9 +263,25 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
         }
       }
     }
+
+    // ═══ GRAY "CONSTRAINT" EDGES: UserProxy connects only to streaming agents ═══
+    if (constraints.length > 0) {
+      const streamingAgents = ALL_AGENTS.filter(id => agents[id].isStreaming);
+      for (const agentId of streamingAgents) {
+        edges.push({
+          id: `edge-userproxy-${agentId}`,
+          source: 'node-userproxy',
+          sourceHandle: 'left',
+          target: `node-${agentId}`,
+          targetHandle: 'right-target',
+          type: 'semantic',
+          data: { edgeType: 'constraint', label: 'informs' },
+        });
+      }
+    }
     
     return edges;
-  }, [agents]);
+  }, [agents, constraints]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<AgentThoughtNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge<SemanticEdgeData>>([]);

@@ -21,6 +21,7 @@ import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agen
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { DebateCanvas } from '@/components/graph';
+import { TimelineBar } from '@/components/TimelineBar';
 
 // DiceBear avatar
 const getAvatarUrl = (agentId: AgentId) =>
@@ -62,8 +63,8 @@ export function DebatePage() {
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
-  const connectionState = useDebateStore((state) => state.connectionState);
   const totalTokens = useDebateStore((state) => state.totalTokens);
+  const connectionState = useDebateStore((state) => state.connectionState);
 
   // WebSocket
   const { isReady, startDebateSession, injectConstraint } = useWebSocket();
@@ -89,25 +90,18 @@ export function DebatePage() {
     return () => clearInterval(interval);
   }, [isDebating]);
 
-  // Format time
-  const formatTime = (ms: number): string => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
   // Calculate tokens per second (PRD: "2,847 t/s" display) - used for display
   const _tokensPerSec = elapsedMs > 0 ? Math.round((totalTokens / elapsedMs) * 1000) : 0;
   void _tokensPerSec; // Used in inspector panel
 
-  // Extract selected agent from node ID
-  const selectedAgentId = selectedNodeId
+  // Extract selected agent from node ID (ignore user proxy)
+  const selectedAgentId = selectedNodeId && selectedNodeId !== 'node-userproxy'
     ? (selectedNodeId.replace('node-', '') as AgentId)
     : null;
 
   // Handle node selection from canvas
   const handleNodeSelect = useCallback((nodeId: string | null) => {
+    if (nodeId === 'node-userproxy') return;
     setSelectedNodeId(nodeId);
   }, []);
 
@@ -119,9 +113,6 @@ export function DebatePage() {
     injectConstraint(constraintInput.trim());
     setConstraintInput('');
   };
-
-  // Timeline progress (12 second max)
-  const timelineProgress = Math.min((elapsedMs / 12000) * 100, 100);
 
   // No query state
   if (!query) {
@@ -187,15 +178,8 @@ export function DebatePage() {
             </p>
           </div>
 
-          {/* Right: Phase indicator only */}
-          <div className="flex items-center gap-4">
-            {/* Phase/Round Name */}
-            {phase !== 'idle' && phase !== 'complete' && (
-              <span className={`text-[10px] text-[#F15A29] uppercase tracking-wider font-bold ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                {phase}
-              </span>
-            )}
-          </div>
+          {/* Right: Empty */}
+          <div />
         </div>
       </header>
 
@@ -267,13 +251,6 @@ export function DebatePage() {
               })}
             </div>
           </div>
-
-          {/* Empty bottom section - removed stats */}
-          <div className={`p-3 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/[0.06]'}`}>
-            <div className={`text-[10px] text-white/25 px-2 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
-              {designMode === 'boxy' ? '8 AGENTS' : '8 agents'}
-            </div>
-          </div>
         </aside>
 
         {/* ─────────────────────────────────────────────────────────────
@@ -298,7 +275,7 @@ export function DebatePage() {
         {/* ─────────────────────────────────────────────────────────────
             RIGHT SIDEBAR - Inspector (slides in on select)
         ───────────────────────────────────────────────────────────── */}
-        {selectedAgentId && (
+        {selectedAgentId && agents[selectedAgentId] && (
           <aside className={`${isInspectorExpanded ? 'w-[600px]' : 'w-80'} flex-shrink-0 bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-200 transition-all ${designMode === 'boxy' ? 'border-l-2 border-white/10' : 'border-l border-white/[0.06]'}`}>
             {/* Header */}
             <div className={`h-14 flex-shrink-0 px-4 flex items-center justify-between ${designMode === 'boxy' ? 'border-b-2 border-white/10' : 'border-b border-white/[0.06]'}`}>
@@ -347,8 +324,8 @@ export function DebatePage() {
             </div>
 
             {/* Content - Full Response Only */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-6 text-[14px] text-white/80 leading-[1.7]">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-6 text-[14px] text-white/80 leading-[1.7] break-words">
                 {(() => {
                   const { thinking, answer, isThinkingInProgress } = parseThinkTags(agents[selectedAgentId].text);
                   return (
@@ -359,7 +336,7 @@ export function DebatePage() {
                           <summary className="text-[10px] text-white/30 uppercase tracking-wider mb-2 cursor-pointer hover:text-white/50 transition-colors">
                             💭 Thinking {isThinkingInProgress && <span className="text-yellow-500/60">(in progress)</span>}
                           </summary>
-                          <div className="p-3 text-[11px] text-white/40 leading-relaxed bg-white/[0.03] border border-white/[0.06] font-mono max-h-40 overflow-y-auto">
+                          <div className="p-3 text-[11px] text-white/40 leading-relaxed bg-white/[0.03] border border-white/[0.06] font-mono max-h-40 overflow-y-auto break-words">
                             {thinking}
                             {isThinkingInProgress && <span className="animate-pulse">▊</span>}
                           </div>
@@ -367,22 +344,22 @@ export function DebatePage() {
                       )}
 
                       {/* Response */}
-                      <div className="prose prose-invert prose-sm max-w-none">
+                      <div className="prose prose-invert prose-sm max-w-none break-words">
                         {answer ? (
                           <ReactMarkdown
                             components={{
-                              p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                              h1: ({ children }) => <h1 className="text-lg font-bold mb-3 text-white/90">{children}</h1>,
-                              h2: ({ children }) => <h2 className="text-base font-semibold mb-2 text-white/85">{children}</h2>,
-                              h3: ({ children }) => <h3 className="text-sm font-medium mb-2 text-white/80">{children}</h3>,
+                              p: ({ children }) => <p className="mb-3 last:mb-0 break-words">{children}</p>,
+                              h1: ({ children }) => <h1 className="text-lg font-bold mb-3 text-white/90 break-words">{children}</h1>,
+                              h2: ({ children }) => <h2 className="text-base font-semibold mb-2 text-white/85 break-words">{children}</h2>,
+                              h3: ({ children }) => <h3 className="text-sm font-medium mb-2 text-white/80 break-words">{children}</h3>,
                               ul: ({ children }) => <ul className="list-disc pl-4 mb-3 space-y-1">{children}</ul>,
                               ol: ({ children }) => <ol className="list-decimal pl-4 mb-3 space-y-1">{children}</ol>,
-                              li: ({ children }) => <li className="text-white/70">{children}</li>,
-                              code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[11px] font-mono text-white/80">{children}</code>,
+                              li: ({ children }) => <li className="text-white/70 break-words">{children}</li>,
+                              code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[11px] font-mono text-white/80 break-all">{children}</code>,
                               pre: ({ children }) => <pre className="bg-white/5 p-3 rounded-lg overflow-x-auto mb-3">{children}</pre>,
-                              blockquote: ({ children }) => <blockquote className="border-l-2 border-white/20 pl-3 italic text-white/50 mb-3">{children}</blockquote>,
-                              strong: ({ children }) => <strong className="text-white/95 font-semibold">{children}</strong>,
-                              em: ({ children }) => <em className="text-white/75 italic">{children}</em>,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-white/20 pl-3 italic text-white/50 mb-3 break-words">{children}</blockquote>,
+                              strong: ({ children }) => <strong className="text-white/95 font-semibold break-words">{children}</strong>,
+                              em: ({ children }) => <em className="text-white/75 italic break-words">{children}</em>,
                             }}
                           >
                             {answer}
@@ -404,57 +381,61 @@ export function DebatePage() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════
-          BOTTOM BAR - Timeline + Interrupt Input + Branding
+          BOTTOM SECTION - Input + Timeline
       ═══════════════════════════════════════════════════════════════ */}
-      <footer className={`h-14 flex-shrink-0 bg-[#0a0a0a] px-5 flex items-center gap-4 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/[0.06]'}`}>
-        {/* Timeline */}
-        <div className={`flex items-center gap-3 w-48 ${designMode === 'boxy' ? '' : ''}`}>
-          <span className={`text-[10px] text-white/25 tabular-nums w-8 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-            {formatTime(elapsedMs)}
-          </span>
-          <div className={`flex-1 h-1 bg-white/[0.06] relative ${designMode === 'round' ? 'rounded-full' : ''}`}>
-            <div
-              className={`absolute left-0 top-0 h-full bg-[#F15A29]/60 transition-all duration-100 ${designMode === 'round' ? 'rounded-full' : ''}`}
-              style={{ width: `${timelineProgress}%` }}
-            />
-          </div>
-          <span className={`text-[10px] text-white/25 tabular-nums w-8 ${designMode === 'boxy' ? 'font-mono' : ''}`}>0:12</span>
-        </div>
-
-        {/* Follow-up Input */}
-        <div className="flex-1 max-w-lg">
-          <form onSubmit={handleConstraintSubmit} className="w-full">
-            <div className={`flex items-center gap-2 h-9 px-3 bg-white/[0.03] border focus-within:border-white/20 transition-colors ${designMode === 'boxy' ? 'border-white/[0.08]' : 'border-white/[0.08] rounded-lg'}`}>
-              <svg className="w-3.5 h-3.5 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              <input
-                type="text"
-                value={constraintInput}
-                onChange={(e) => setConstraintInput(e.target.value)}
-                placeholder={designMode === 'boxy' ? 'ASK A FOLLOW-UP...' : 'Ask a follow-up...'}
-                className={`flex-1 bg-transparent text-white/70 placeholder-white/25 outline-none ${designMode === 'boxy' ? 'text-xs font-mono uppercase tracking-wider' : 'text-xs'}`}
-              />
-              {constraintInput && (
-                <button
-                  type="submit"
-                  className={`text-[10px] text-white/60 hover:text-white transition-colors ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}
-                >
-                  {designMode === 'boxy' ? 'SEND' : 'Send'}
-                </button>
-              )}
+      
+      {/* Follow-up Input Bar - Compact */}
+      <div className="flex-shrink-0">
+        <div className="flex">
+          <div className={`w-56 flex-shrink-0 bg-[#0a0a0a] ${designMode === 'boxy' ? 'border-r-2 border-white/10' : 'border-r border-white/[0.06]'}`} />
+          <div className="flex-1 bg-[#0a0a0a] px-5 py-2.5">
+            <div className="max-w-3xl mx-auto">
+              <form onSubmit={handleConstraintSubmit}>
+                <div className={`flex items-center gap-2 h-10 px-3 transition-all duration-200 ${
+                  designMode === 'boxy'
+                    ? 'bg-[#0f0f0f] border border-white/[0.08]'
+                    : 'backdrop-blur-xl bg-white/[0.03] border border-white/[0.06] rounded-lg'
+                }`}>
+                  <input
+                    type="text"
+                    value={constraintInput}
+                    onChange={(e) => setConstraintInput(e.target.value)}
+                    placeholder={designMode === 'boxy' ? 'ADD A CONSTRAINT...' : 'Add a constraint...'}
+                    className={`flex-1 bg-transparent text-white outline-none text-sm ${
+                      designMode === 'boxy'
+                        ? 'placeholder-white/30 tracking-wide font-mono text-xs'
+                        : 'placeholder-white/40 font-sans'
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!constraintInput.trim()}
+                    className={`flex items-center justify-center w-7 h-7 flex-shrink-0 transition-all duration-200 ${
+                      constraintInput.trim()
+                        ? `bg-white text-black hover:bg-white/90 ${designMode === 'round' ? 'rounded-lg' : ''}`
+                        : `bg-white/10 text-white/30 cursor-not-allowed border ${designMode === 'round' ? 'rounded-lg border-white/10' : 'border-white/20'}`
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                  </button>
+                </div>
+              </form>
             </div>
-          </form>
+          </div>
         </div>
+      </div>
 
-        {/* Cerebras Branding */}
-        <div className="flex items-center gap-2 ml-auto">
-          <img src="/cerebras-logo.svg" alt="Cerebras" className="w-4 h-4 opacity-50" />
-          <span className={`text-[10px] text-white/30 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-            {designMode === 'boxy' ? 'CEREBRAS' : 'Cerebras'}
-          </span>
+      {/* Timeline Bar */}
+      <div className="flex-shrink-0">
+        <div className="flex">
+          <div className={`w-56 flex-shrink-0 bg-[#0a0a0a] ${designMode === 'boxy' ? 'border-r-2 border-white/10' : 'border-r border-white/[0.06]'}`} />
+          <div className="flex-1">
+            <TimelineBar elapsedMs={elapsedMs} designMode={designMode} />
+          </div>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

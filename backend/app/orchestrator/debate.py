@@ -64,6 +64,10 @@ DEBATE_ROUNDS = [
 ]
 
 
+class RoundRestartRequested(Exception):
+    """Raised when a constraint is injected mid-round and we need to restart the round."""
+
+
 class DebateOrchestrator:
     """
     Orchestrates a multi-round debate where agents actually respond to each other.
@@ -86,10 +90,17 @@ class DebateOrchestrator:
         self.blackboard: Dict[int, Dict[str, str]] = {}  # {round_num: {agent_id: text}}
         # User constraints injected mid-debate
         self.user_constraints: List[str] = []
-        
+        self._interrupt_event: Optional[asyncio.Event] = None
+        self._current_round_num: Optional[int] = None
+
     def inject_constraint(self, constraint: str):
         """Inject a user constraint that all subsequent agents will see."""
         self.user_constraints.append(constraint)
+        print(f"[{datetime.now().isoformat()}] Constraint injected! Total constraints: {len(self.user_constraints)}")
+        # If a round is currently streaming, request a restart so all agents see the new constraint
+        if self._interrupt_event is not None and self._current_round_num is not None:
+            print(f"[{datetime.now().isoformat()}] Restart requested for round {self._current_round_num}")
+            self._interrupt_event.set()
 
     async def stream_debate(self, query: str, model: str = "pro") -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -106,6 +117,8 @@ class DebateOrchestrator:
         self.token_count = 0
         self.blackboard = {}
         self.user_constraints = []
+        self._interrupt_event = asyncio.Event()
+        self._current_round_num = None
         
         # Map tier to actual Cerebras model
         model_map = {
@@ -118,8 +131,13 @@ class DebateOrchestrator:
         print(f"[{datetime.now().isoformat()}] Debate starting - model: {model_id}, tier: {model}")
         print(f"[{datetime.now().isoformat()}] Query: {query[:100]}...")
 
-        # Run each debate round
-        for round_config in DEBATE_ROUNDS:
+        # Run each debate round (with restart support)
+        round_index = 0
+        while round_index < len(DEBATE_ROUNDS):
+            round_config = DEBATE_ROUNDS[round_index]
+            self._current_round_num = round_config.round_num
+            if self._interrupt_event.is_set():
+                self._interrupt_event.clear()
             # Signal round start to frontend
             yield {
                 "type": "round_start",
@@ -144,15 +162,27 @@ class DebateOrchestrator:
             
             # Create the enriched prompt with full context
             enriched_query = self._create_round_prompt(query, round_config, debate_context)
+            
+            # Log constraint status
+            constraint_info = f", constraints={len(self.user_constraints)}" if self.user_constraints else ""
             print(
                 f"[{datetime.now().isoformat()}] Round {round_config.round_num} prompt stats - "
                 f"query_chars={len(query)}, context_chars={len(debate_context)}, enriched_chars={len(enriched_query)}, "
-                f"model_id={model_id}"
+                f"model_id={model_id}{constraint_info}"
             )
             
             # Run agents for this round
-            async for msg in self._run_round(round_config, enriched_query, model_id, use_reasoning):
-                yield msg
+            try:
+                async for msg in self._run_round(round_config, enriched_query, model_id, use_reasoning):
+                    yield msg
+            except RoundRestartRequested:
+                # Clear any partial outputs for this round and retry
+                print(f"[{datetime.now().isoformat()}] Restarting round {round_config.round_num} due to constraint")
+                print(f"[{datetime.now().isoformat()}] Constraints now: {self.user_constraints}")
+                self.blackboard[round_config.round_num] = {}
+                continue
+
+            round_index += 1
 
         # Final metrics
         elapsed = time.time() - self.start_time
@@ -160,6 +190,7 @@ class DebateOrchestrator:
         
         print(f"[{datetime.now().isoformat()}] Debate complete - {self.token_count} tokens in {elapsed:.1f}s ({tps:.0f} t/s)")
         
+        self._current_round_num = None
         yield {
             "type": "debate_complete",
             "totalTokens": self.token_count,
@@ -173,31 +204,34 @@ class DebateOrchestrator:
         Build the full debate context up to this point.
         This is what makes it a REAL debate - agents see what others said.
         """
-        if current_round.round_num == 1:
-            return ""  # First round has no prior context
-            
         context_parts = []
         
-        # Add all prior rounds
-        for round_num in range(1, current_round.round_num):
-            if round_num in self.blackboard:
-                round_config = DEBATE_ROUNDS[round_num - 1]
-                context_parts.append(f"=== ROUND {round_num}: {round_config.name.upper()} ===")
-                
-                for agent_id, text in self.blackboard[round_num].items():
-                    agent_name = self.agents[agent_id].name
-                    # Clean up text (remove think tags for context)
-                    clean_text = self._strip_think_tags(text)
-                    context_parts.append(f"\n[{agent_name}]:\n{clean_text}")
-                
-                context_parts.append("")  # Empty line between rounds
+        # Add all prior rounds (skip if round 1)
+        if current_round.round_num > 1:
+            for round_num in range(1, current_round.round_num):
+                if round_num in self.blackboard:
+                    round_config = DEBATE_ROUNDS[round_num - 1]
+                    context_parts.append(f"=== ROUND {round_num}: {round_config.name.upper()} ===")
+                    
+                    for agent_id, text in self.blackboard[round_num].items():
+                        agent_name = self.agents[agent_id].name
+                        # Clean up text (remove think tags for context)
+                        clean_text = self._strip_think_tags(text)
+                        context_parts.append(f"\n[{agent_name}]:\n{clean_text}")
+                    
+                    context_parts.append("")  # Empty line between rounds
         
-        # Add user constraints if any
+        # Add user constraints ALWAYS (even for round 1, even if mid-round)
+        # This ensures constraints injected during current round are visible
         if self.user_constraints:
-            context_parts.append("=== USER CONSTRAINTS ===")
+            context_parts.append("=== USER CONSTRAINTS (FOLLOW THESE!) ===")
             for i, constraint in enumerate(self.user_constraints, 1):
                 context_parts.append(f"{i}. {constraint}")
             context_parts.append("")
+            print(
+                f"[{datetime.now().isoformat()}] Context includes {len(self.user_constraints)} "
+                f"constraint(s): {self.user_constraints}"
+            )
             
         return "\n".join(context_parts)
 
@@ -215,9 +249,19 @@ class DebateOrchestrator:
         parts = [
             f"ORIGINAL QUESTION: {original_query}",
             "",
+        ]
+
+        if self.user_constraints:
+            parts.extend([
+                "CRITICAL USER CONSTRAINTS (FOLLOW EXACTLY):",
+                *[f"{i}. {c}" for i, c in enumerate(self.user_constraints, 1)],
+                "",
+            ])
+
+        parts.extend([
             f"CURRENT ROUND: {round_config.name}",
             f"YOUR TASK: {round_config.context_prompt}",
-        ]
+        ])
         
         if debate_context:
             parts.extend([
@@ -308,6 +352,16 @@ class DebateOrchestrator:
         last_metrics_time = time.time()
 
         while agents_done < total_agents:
+            if self._interrupt_event is not None and self._interrupt_event.is_set():
+                self._interrupt_event.clear()
+                print(f"[{datetime.now().isoformat()}] Round {round_config.round_num} interrupted; cancelling tasks")
+                for task in running_tasks:
+                    task.cancel()
+                if running_tasks:
+                    await asyncio.wait(running_tasks, timeout=1)
+                while not queue.empty():
+                    queue.get_nowait()
+                raise RoundRestartRequested()
             try:
                 token = await asyncio.wait_for(queue.get(), timeout=0.1)
 
@@ -352,6 +406,16 @@ class DebateOrchestrator:
                     last_metrics_time = current_time
 
             except asyncio.TimeoutError:
+                if self._interrupt_event is not None and self._interrupt_event.is_set():
+                    self._interrupt_event.clear()
+                    print(f"[{datetime.now().isoformat()}] Round {round_config.round_num} interrupted during wait; cancelling tasks")
+                    for task in running_tasks:
+                        task.cancel()
+                    if running_tasks:
+                        await asyncio.wait(running_tasks, timeout=1)
+                    while not queue.empty():
+                        queue.get_nowait()
+                    raise RoundRestartRequested()
                 now = time.time()
                 if now - last_status_log >= 5:
                     pending_agents = [aid for aid in round_config.agents if aid not in completed_agents]

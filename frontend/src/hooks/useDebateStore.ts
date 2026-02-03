@@ -12,6 +12,18 @@ import type { GraphNode, GraphEdge } from '@/types/graph';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+// Checkpoint for timeline time-travel
+export interface Checkpoint {
+  id: string;
+  timestamp: number;  // ms since debate start
+  type: 'agent_done' | 'round_start' | 'constraint';
+  label: string;
+  agentId?: AgentId;
+  roundName?: string;
+  // Snapshot of all agent texts at this moment
+  agentTexts: Record<AgentId, string>;
+}
+
 interface DebateState {
   // Connection
   connectionState: ConnectionState;
@@ -47,6 +59,11 @@ interface DebateState {
   // UserProxy node for visualization
   userProxyNode: { id: string; text: string; timestamp: number } | null;
 
+  // Timeline checkpoints for time-travel
+  checkpoints: Checkpoint[];
+  activeCheckpointIndex: number | null;  // null = live, number = viewing checkpoint
+  debateStartTime: number | null;
+
   // Actions
   setConnectionState: (state: ConnectionState) => void;
   startDebate: (query: string) => void;
@@ -76,6 +93,12 @@ interface DebateState {
   addConstraint: (constraint: string) => void;
   setUserProxyNode: (node: { id: string; text: string; timestamp: number } | null) => void;
   clearConstraints: () => void;
+
+  // Checkpoint/timeline actions
+  addCheckpoint: (checkpoint: Omit<Checkpoint, 'agentTexts'>) => void;
+  jumpToCheckpoint: (index: number) => void;
+  exitTimeTravel: () => void;
+  clearCheckpoints: () => void;
 }
 
 const createInitialAgents = (): Record<AgentId, AgentState> => {
@@ -117,6 +140,10 @@ const initialState = {
   // User constraints (PRD: Interrupt & Inject)
   constraints: [] as string[],
   userProxyNode: null as { id: string; text: string; timestamp: number } | null,
+  // Timeline checkpoints
+  checkpoints: [] as Checkpoint[],
+  activeCheckpointIndex: null as number | null,
+  debateStartTime: null as number | null,
 };
 
 export const useDebateStore = create<DebateState>()(
@@ -139,6 +166,9 @@ export const useDebateStore = create<DebateState>()(
         selectedNodeId: null,
         constraints: [],
         userProxyNode: null,
+        checkpoints: [],
+        activeCheckpointIndex: null,
+        debateStartTime: Date.now(),
       }),
 
     appendToken: (agentId, content) =>
@@ -309,12 +339,73 @@ export const useDebateStore = create<DebateState>()(
 
     // User constraint actions (PRD: Interrupt & Inject)
     addConstraint: (constraint: string) =>
-      set((state) => ({
-        constraints: [...state.constraints, constraint],
-      })),
+      set((state) => {
+        const last = state.constraints[state.constraints.length - 1];
+        if (last === constraint) return state;
+        return {
+          constraints: [...state.constraints, constraint],
+        };
+      }),
 
     setUserProxyNode: (node) => set({ userProxyNode: node }),
 
     clearConstraints: () => set({ constraints: [], userProxyNode: null }),
+
+    // Checkpoint/timeline actions
+    addCheckpoint: (checkpoint) =>
+      set((state) => {
+        // Capture current agent texts as snapshot
+        const agentTexts = {} as Record<AgentId, string>;
+        for (const id of AGENT_IDS) {
+          agentTexts[id] = state.agents[id].text;
+        }
+        return {
+          checkpoints: [...state.checkpoints, { ...checkpoint, agentTexts }],
+        };
+      }),
+
+    jumpToCheckpoint: (index) =>
+      set((state) => {
+        const checkpoint = state.checkpoints[index];
+        if (!checkpoint) return state;
+
+        // Restore agent texts to checkpoint snapshot
+        const restoredAgents = { ...state.agents };
+        for (const id of AGENT_IDS) {
+          restoredAgents[id] = {
+            ...restoredAgents[id],
+            text: checkpoint.agentTexts[id] || '',
+            isStreaming: false,
+          };
+        }
+
+        return {
+          activeCheckpointIndex: index,
+          agents: restoredAgents,
+        };
+      }),
+
+    exitTimeTravel: () =>
+      set((state) => {
+        // Restore to latest checkpoint (or live state)
+        const latestCheckpoint = state.checkpoints[state.checkpoints.length - 1];
+        if (!latestCheckpoint) return { activeCheckpointIndex: null };
+
+        const restoredAgents = { ...state.agents };
+        for (const id of AGENT_IDS) {
+          restoredAgents[id] = {
+            ...restoredAgents[id],
+            text: latestCheckpoint.agentTexts[id] || '',
+            isStreaming: false,
+          };
+        }
+
+        return {
+          activeCheckpointIndex: null,
+          agents: restoredAgents,
+        };
+      }),
+
+    clearCheckpoints: () => set({ checkpoints: [], activeCheckpointIndex: null }),
   }))
 );

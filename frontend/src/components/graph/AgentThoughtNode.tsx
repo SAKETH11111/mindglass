@@ -24,6 +24,7 @@ export interface AgentThoughtNodeData extends Record<string, unknown> {
   phase: number;
   tokensPerSecond?: number;
   designMode?: 'boxy' | 'round';
+  isUserProxy?: boolean;
 }
 
 // Parse <think>...</think> tags and return thinking + answer separately
@@ -53,9 +54,11 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
   const text = (data as AgentThoughtNodeData).text;
   const isStreaming = (data as AgentThoughtNodeData).isStreaming;
   const designMode = (data as AgentThoughtNodeData).designMode ?? 'boxy';
+  const isUserProxy = (data as AgentThoughtNodeData).isUserProxy ?? false;
 
-  const color = AGENT_COLORS[agentId];
-  const name = AGENT_NAMES[agentId];
+  // UserProxy gets special gray color
+  const color = isUserProxy ? '#888888' : AGENT_COLORS[agentId];
+  const name = isUserProxy ? 'You' : AGENT_NAMES[agentId];
   
   // Parse thinking and answer
   const { thinking, answer, isThinkingComplete } = parseThinkTags(text);
@@ -105,15 +108,22 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
         style={{ backgroundColor: designMode === 'boxy' ? `${color}15` : `${color}15` }}
       >
         <div
-          className={`w-7 h-7 overflow-hidden flex-shrink-0 ${designMode === 'round' ? 'rounded-full' : ''}`}
+          className={`w-7 h-7 overflow-hidden flex-shrink-0 flex items-center justify-center ${designMode === 'round' ? 'rounded-full' : ''}`}
           style={{ backgroundColor: color }}
         >
-          <img
-            src={getAvatarUrl(agentId)}
-            alt={name}
-            className="w-full h-full"
-            draggable={false}
-          />
+          {isUserProxy ? (
+            // User icon for UserProxy
+            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+          ) : (
+            <img
+              src={getAvatarUrl(agentId)}
+              alt={name}
+              className="w-full h-full"
+              draggable={false}
+            />
+          )}
         </div>
         <span className={`text-xs font-semibold text-white/90 tracking-wider ${designMode === 'boxy' ? 'font-mono uppercase' : 'uppercase'}`}>
           {name}
@@ -185,6 +195,19 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
         type="target"
         position={Position.Bottom}
         id="bottom-target"
+        className="!w-2 !h-2 !bg-white/30 !border-0"
+      />
+      {/* Left/Right handles for UserProxy constraint edges */}
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="left"
+        className="!w-2 !h-2 !bg-white/30 !border-0"
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="right-target"
         className="!w-2 !h-2 !bg-white/30 !border-0"
       />
     </div>

@@ -24,6 +24,8 @@ export function useWebSocket() {
     setError,
     startDebate,
     addConstraint,
+    addCheckpoint,
+    setUserProxyNode,
   } = useDebateStore();
 
   const connect = useCallback(() => {
@@ -65,6 +67,8 @@ export function useWebSocket() {
       ws.current.onmessage = (event) => {
         try {
           const data: WebSocketMessage = JSON.parse(event.data);
+          const debateStartTime = useDebateStore.getState().debateStartTime;
+          const getTimestamp = () => debateStartTime ? Date.now() - debateStartTime : 0;
 
           switch (data.type) {
             case 'agent_token': {
@@ -79,6 +83,15 @@ export function useWebSocket() {
 
             case 'agent_done': {
               setAgentDone(data.agentId);
+              // Create checkpoint when agent finishes
+              const agentName = data.agentId.charAt(0).toUpperCase() + data.agentId.slice(1);
+              addCheckpoint({
+                id: `agent-${data.agentId}-${Date.now()}`,
+                timestamp: getTimestamp(),
+                type: 'agent_done',
+                label: `${agentName} finished`,
+                agentId: data.agentId,
+              });
               break;
             }
 
@@ -127,6 +140,19 @@ export function useWebSocket() {
             case 'constraint_acknowledged': {
               console.log('Constraint acknowledged:', data.constraint);
               addConstraint(data.constraint);
+              // Create UserProxy node for visualization
+              setUserProxyNode({
+                id: `userproxy-${Date.now()}`,
+                text: data.constraint,
+                timestamp: Date.now(),
+              });
+              // Create checkpoint for constraint
+              addCheckpoint({
+                id: `constraint-${Date.now()}`,
+                timestamp: getTimestamp(),
+                type: 'constraint',
+                label: `You: "${data.constraint.slice(0, 30)}${data.constraint.length > 30 ? '...' : ''}"`,
+              });
               break;
             }
 
@@ -142,7 +168,7 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket:', err);
       setError('Failed to connect to server');
     }
-  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError, addConstraint]);
+  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode]);
 
   useEffect(() => {
     connect();

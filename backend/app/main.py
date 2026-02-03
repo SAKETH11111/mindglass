@@ -4,6 +4,7 @@ WebSocket-enabled real-time debate visualization platform
 """
 
 import json
+import asyncio
 import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,37 +59,54 @@ async def websocket_endpoint(websocket: WebSocket):
     connection_time = datetime.now().isoformat()
     print(f"[{connection_time}] WebSocket connected - Client: {client_id}")
 
+    stream_task: asyncio.Task | None = None
+    stream_id: str | None = None
+
+    async def run_stream(query: str, model: str):
+        try:
+            print(f"[{datetime.now().isoformat()}] Stream start id={stream_id} model={model}")
+            async for token in orchestrator.stream_debate(query, model):
+                await websocket.send_json(token)
+            await websocket.send_json(create_debate_complete())
+            print(f"[{datetime.now().isoformat()}] Debate complete")
+        except asyncio.CancelledError:
+            print(f"[{datetime.now().isoformat()}] Debate stream cancelled")
+        except Exception as e:
+            error_msg = f"Error during streaming: {str(e)}"
+            print(f"[{datetime.now().isoformat()}] {error_msg}")
+            try:
+                await websocket.send_json(create_error(error_msg))
+            except Exception:
+                pass
+
     try:
         while True:
             # Receive message
             data = await websocket.receive_text()
+            print(f"[{datetime.now().isoformat()}] WS recv: {data}")
             message = json.loads(data)
 
             # Handle start_debate message
             if message.get("type") == "start_debate":
                 query = message.get("query", "").strip()
                 model = message.get("model", "pro")  # Default to 'pro' tier
-                
+
                 # Validate query is not empty
                 if not query:
                     await websocket.send_json(create_error("Query cannot be empty"))
                     continue
-                    
+
                 print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model}")
 
-                try:
-                    # Stream from ALL agents via orchestrator
-                    async for token in orchestrator.stream_debate(query, model):
-                        await websocket.send_json(token)
+                # Cancel any existing stream
+                if stream_task and not stream_task.done():
+                    print(f"[{datetime.now().isoformat()}] Cancelling prior stream id={stream_id}")
+                    stream_task.cancel()
+                    await asyncio.sleep(0)
 
-                    # Send completion message
-                    await websocket.send_json(create_debate_complete())
-                    print(f"[{datetime.now().isoformat()}] Debate complete")
-
-                except Exception as e:
-                    error_msg = f"Error during streaming: {str(e)}"
-                    print(f"[{datetime.now().isoformat()}] {error_msg}")
-                    await websocket.send_json(create_error(error_msg))
+                # Start streaming in the background so we can handle injects
+                stream_id = str(uuid.uuid4())
+                stream_task = asyncio.create_task(run_stream(query, model))
 
             elif message.get("type") == "inject_constraint":
                 # PRD Feature: Interrupt & Inject constraint mid-debate
@@ -97,12 +115,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"[{datetime.now().isoformat()}] Constraint injected: {constraint}")
                     # Store constraint in orchestrator's user_constraints list
                     orchestrator.inject_constraint(constraint)
-                    # Acknowledge the constraint injection
-                    await websocket.send_json({
+                    # Acknowledge the constraint injection immediately
+                    ack = {
                         "type": "constraint_acknowledged",
                         "constraint": constraint,
                         "timestamp": int(datetime.now().timestamp() * 1000)
-                    })
+                    }
+                    print(f"[{datetime.now().isoformat()}] WS send: {ack}")
+                    await websocket.send_json(ack)
                 else:
                     await websocket.send_json(create_error("Constraint cannot be empty"))
 
@@ -113,6 +133,8 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         disconnection_time = datetime.now().isoformat()
         print(f"[{disconnection_time}] WebSocket disconnected - Client: {client_id}")
+        if stream_task and not stream_task.done():
+            stream_task.cancel()
     except json.JSONDecodeError as e:
         error_time = datetime.now().isoformat()
         print(f"[{error_time}] JSON decode error: {e}")

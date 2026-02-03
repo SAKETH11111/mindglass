@@ -7,7 +7,7 @@ import { V1Page } from '@/pages/v1/V1Page'
 import { V2Page } from '@/pages/v2/V2Page'
 import { V3Page } from '@/pages/v3/V3Page'
 import { V4Page } from '@/pages/v4/V4Page'
-import { DebatePage, DebatePage6d4e5d0 } from '@/pages/debate'
+import { DebatePage } from '@/pages/debate'
 import { AgentsPanel } from '@/components/AgentsPanel'
 import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
 import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
@@ -329,9 +329,6 @@ function App() {
         {/* Debate Canvas - Main experience */}
         <Route path="/debate" element={<DebatePage />} />
 
-        {/* Legacy - Commit 6d4e5d0 (WebSocket integration with live streaming) */}
-        <Route path="/de" element={<DebatePage6d4e5d0 />} />
-        
         {/* V1 - Sidebar layout */}
         <Route path="/v1" element={<V1Page />} />
         
