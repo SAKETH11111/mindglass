@@ -3,10 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { Send } from 'lucide-react'
 import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from './types/agent'
 import type { AgentId } from './types/agent'
-import { V1Page } from '@/pages/v1/V1Page'
-import { V2Page } from '@/pages/v2/V2Page'
-import { V3Page } from '@/pages/v3/V3Page'
-import { V4Page } from '@/pages/v4/V4Page'
 import { DebatePage } from '@/pages/debate'
 import { AgentsPanel } from '@/components/AgentsPanel'
 import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
@@ -329,18 +325,6 @@ function App() {
         {/* Debate Canvas - Main experience */}
         <Route path="/debate" element={<DebatePage />} />
 
-        {/* V1 - Sidebar layout */}
-        <Route path="/v1" element={<V1Page />} />
-        
-        {/* V2 - Canvas-focused layout */}
-        <Route path="/v2" element={<V2Page />} />
-        
-        {/* V3 - Theatrical premium layout */}
-        <Route path="/v3" element={<V3Page />} />
-        
-        {/* V4 - Linear-inspired clean layout */}
-        <Route path="/v4" element={<V4Page />} />
-        
         {/* Catch-all redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
