@@ -44,16 +44,18 @@ export interface DebateCompleteMessage {
   timestamp: number;
 }
 
-export interface DebateTimeoutMessage {
-  type: 'debate_timeout';
-  message: string;
-  timestamp: number;
-}
-
 export interface PhaseStartMessage {
   type: 'phase_start';
   phase: number;
   name: string;
+  timestamp?: number;
+}
+
+export interface RoundStartMessage {
+  type: 'round_start';
+  round: number;
+  name: string;
+  agents?: string[];
   timestamp?: number;
 }
 
@@ -68,7 +70,7 @@ export type WebSocketMessage =
   | AgentErrorMessage
   | PhaseChangeMessage
   | PhaseStartMessage
+  | RoundStartMessage
   | MetricsMessage
   | DebateCompleteMessage
-  | DebateTimeoutMessage
   | ErrorMessage;

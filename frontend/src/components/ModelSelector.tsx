@@ -13,12 +13,12 @@ const MODEL_TIERS: Record<ModelTier, ModelConfig> = {
   fast: {
     tier: 'fast',
     modelId: 'llama3.1-8b',
-    modelName: 'Llama 3.1 8B',
+    modelName: 'Llama 3.1 8B (~2200 tok/s)',
   },
   pro: {
     tier: 'pro',
     modelId: 'gpt-oss-120b',
-    modelName: 'GPT-OSS 120B',
+    modelName: 'GPT-OSS 120B (~3000 tok/s)',
   },
 }
 
@@ -172,9 +172,6 @@ export function ModelSelector({ selectedTier, onTierChange, disabled, designMode
                     <span className={`text-sm transition-colors ${selectedTier === 'fast' ? 'text-white' : designMode === 'boxy' ? 'text-white/70' : 'text-white/80'} ${designMode === 'boxy' ? 'uppercase tracking-wide' : 'font-medium'}`}>
                       Fast
                     </span>
-                    <p className={`text-[10px] mt-0.5 ${designMode === 'boxy' ? 'text-white/40' : 'text-white/30 font-mono'}`}>
-                      {MODEL_TIERS.fast.modelName}
-                    </p>
                   </div>
                   <div className={`
                     flex items-center justify-center
@@ -220,9 +217,6 @@ export function ModelSelector({ selectedTier, onTierChange, disabled, designMode
                     <span className={`text-sm transition-colors ${selectedTier === 'pro' ? 'text-white' : designMode === 'boxy' ? 'text-white/70' : 'text-white/80'} ${designMode === 'boxy' ? 'uppercase tracking-wide' : 'font-medium'}`}>
                       Pro
                     </span>
-                    <p className={`text-[10px] mt-0.5 ${designMode === 'boxy' ? 'text-white/40' : 'text-white/30 font-mono'}`}>
-                      {MODEL_TIERS.pro.modelName}
-                    </p>
                   </div>
                   <div className={`
                     flex items-center justify-center

@@ -19,7 +19,6 @@ import { EDGE_COLORS, EDGE_STYLES, type EdgeType } from '@/types/graph';
 export interface SemanticEdgeData extends Record<string, unknown> {
   edgeType: EdgeType;
   label?: string;
-  animated?: boolean;
 }
 
 function SemanticEdgeComponent({
@@ -31,12 +30,10 @@ function SemanticEdgeComponent({
   sourcePosition,
   targetPosition,
   data,
-  selected,
 }: EdgeProps) {
   const edgeType = (data?.edgeType as EdgeType) || 'depends';
   const color = EDGE_COLORS[edgeType];
   const style = EDGE_STYLES[edgeType];
-  const animated = (data?.animated as boolean) ?? true;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -50,30 +47,17 @@ function SemanticEdgeComponent({
 
   return (
     <>
-      {/* Glow effect for emphasis */}
-      <BaseEdge
-        id={`${id}-glow`}
-        path={edgePath}
-        style={{
-          stroke: color,
-          strokeWidth: style.strokeWidth + 4,
-          strokeDasharray: style.dashArray,
-          opacity: 0.2,
-          filter: 'blur(4px)',
-        }}
-      />
-      
-      {/* Main edge */}
+      {/* Main edge - solid visible line */}
       <BaseEdge
         id={id}
         path={edgePath}
         style={{
           stroke: color,
-          strokeWidth: selected ? style.strokeWidth + 1 : style.strokeWidth,
+          strokeWidth: 2,
           strokeDasharray: style.dashArray,
           strokeLinecap: 'round',
+          opacity: 1,
         }}
-        className={animated ? 'react-flow__edge-animated' : ''}
       />
 
       {/* Optional edge label */}
@@ -88,13 +72,6 @@ function SemanticEdgeComponent({
             {String(data.label)}
           </div>
         </EdgeLabelRenderer>
-      )}
-
-      {/* Animated particles for active edges */}
-      {animated && edgeType === 'supports' && (
-        <circle r="3" fill={color}>
-          <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
-        </circle>
       )}
     </>
   );

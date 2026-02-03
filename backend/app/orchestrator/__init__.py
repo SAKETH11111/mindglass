@@ -10,7 +10,6 @@ from app.orchestrator.phases import (
     get_current_phase,
     get_agents_for_phase,
     create_phase_change_message,
-    DEBATE_HARD_TIMEOUT,
 )
 from app.orchestrator.blackboard import Blackboard, BlackboardEntry
 
@@ -22,7 +21,6 @@ __all__ = [
     "get_current_phase",
     "get_agents_for_phase",
     "create_phase_change_message",
-    "DEBATE_HARD_TIMEOUT",
     "Blackboard",
     "BlackboardEntry",
 ]

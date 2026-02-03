@@ -41,7 +41,17 @@ export const AGENT_NAMES: Record<AgentId, string> = {
   synthesizer: 'Synthesizer',
 } as const;
 
-export type Phase = 'idle' | 'dispatch' | 'conflict' | 'synthesis' | 'convergence' | 'complete';
+// Phase names - now mapped to debate rounds
+export type Phase = 
+  | 'idle' 
+  | 'Opening Arguments'    // Round 1: Analyst + Optimist
+  | 'Challenge'            // Round 2: Critic + Pessimist attack
+  | 'Defense & Rebuttal'   // Round 3: Analyst + Optimist defend
+  | 'Expert Analysis'      // Round 4: Strategist + Finance + Risk
+  | 'Final Verdict'        // Round 5: Synthesizer
+  | 'complete'
+  // Legacy phase names for backwards compatibility
+  | 'dispatch' | 'conflict' | 'synthesis' | 'convergence';
 
 export interface AgentState {
   id: AgentId;
@@ -52,4 +62,6 @@ export interface AgentState {
   isActive: boolean;
   isStreaming: boolean;
   tokenCount: number;
+  tokensPerSecond: number;
+  streamStartTime: number | null;
 }

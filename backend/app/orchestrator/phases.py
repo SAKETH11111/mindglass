@@ -64,10 +64,6 @@ PHASE_CONFIGS = [
     ),
 ]
 
-# Hard timeout for debate (seconds)
-DEBATE_HARD_TIMEOUT = 12.0
-
-
 def get_phase_config(phase: Phase) -> Optional[PhaseConfig]:
     """Get configuration for a specific phase"""
     for config in PHASE_CONFIGS:
@@ -128,25 +124,6 @@ def create_phase_change_message(phase: Phase, active_agents: List[str]) -> dict:
         "activeAgents": active_agents,
         "timestamp": int(datetime.now().timestamp() * 1000)
     }
-
-
-def create_debate_timeout_message() -> dict:
-    """Create a debate_timeout message"""
-    return {
-        "type": "debate_timeout",
-        "message": "Debate reached 12-second hard timeout",
-        "timestamp": int(datetime.now().timestamp() * 1000)
-    }
-
-
-def is_debate_complete(elapsed: float) -> bool:
-    """Check if debate has reached the hard timeout"""
-    return elapsed >= DEBATE_HARD_TIMEOUT
-
-
-def get_time_remaining(elapsed: float) -> float:
-    """Get time remaining until hard timeout"""
-    return max(0.0, DEBATE_HARD_TIMEOUT - elapsed)
 
 
 def get_phase_time_remaining(elapsed: float) -> float:

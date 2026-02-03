@@ -26,15 +26,21 @@ const getAvatarUrl = (agentId: AgentId) =>
   `https://api.dicebear.com/7.x/notionists/svg?seed=${agentId}&backgroundColor=transparent`;
 
 // Parse think tags for inspector display
-const parseThinkTags = (text: string): { thinking: string; answer: string } => {
+const parseThinkTags = (text: string): { thinking: string; answer: string; isThinkingInProgress: boolean } => {
   const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
   if (thinkMatch) {
     return {
       thinking: thinkMatch[1].trim(),
       answer: text.replace(/<think>[\s\S]*?<\/think>/, '').trim(),
+      isThinkingInProgress: false,
     };
   }
-  return { thinking: '', answer: text };
+  // Handle incomplete think tag (still streaming)
+  const openThinkMatch = text.match(/<think>([\s\S]*)/);
+  if (openThinkMatch && !text.includes('</think>')) {
+    return { thinking: openThinkMatch[1].trim(), answer: '', isThinkingInProgress: true };
+  }
+  return { thinking: '', answer: text, isThinkingInProgress: false };
 };
 
 export function DebatePage() {
@@ -152,10 +158,15 @@ export function DebatePage() {
 
           {/* Right: Status + Metrics */}
           <div className="flex items-center gap-4">
-            {/* Phase */}
-            {phase !== 'idle' && (
-              <span className="text-[10px] text-white/40 uppercase tracking-wider font-mono">
+            {/* Phase/Round Name */}
+            {phase !== 'idle' && phase !== 'complete' && (
+              <span className="text-[10px] text-[#F15A29] uppercase tracking-wider font-mono font-bold">
                 {phase}
+              </span>
+            )}
+            {phase === 'complete' && (
+              <span className="text-[10px] text-emerald-500 uppercase tracking-wider font-mono font-bold">
+                DEBATE COMPLETE
               </span>
             )}
 
@@ -343,16 +354,17 @@ export function DebatePage() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* Thinking Section */}
               {(() => {
-                const { thinking, answer } = parseThinkTags(agents[selectedAgentId].text);
+                const { thinking, answer, isThinkingInProgress } = parseThinkTags(agents[selectedAgentId].text);
                 return (
                   <>
                     {thinking && (
                       <div>
                         <p className="text-[10px] uppercase tracking-widest text-white/25 mb-2 font-mono">
-                          💭 THINKING
+                          💭 THINKING {isThinkingInProgress && <span className="text-yellow-500/60">(in progress)</span>}
                         </p>
                         <div className="p-3 text-[11px] text-white/40 leading-relaxed bg-[#0f0f0f] border border-white/[0.06] font-mono max-h-40 overflow-y-auto">
                           {thinking}
+                          {isThinkingInProgress && <span className="animate-pulse">▊</span>}
                         </div>
                       </div>
                     )}
@@ -363,8 +375,8 @@ export function DebatePage() {
                         RESPONSE
                       </p>
                       <div className="p-4 text-[12px] text-white/60 leading-relaxed bg-[#0f0f0f] border border-white/[0.06] font-mono min-h-[120px] max-h-[300px] overflow-y-auto">
-                        {answer || (agents[selectedAgentId].isStreaming ? 'Thinking...' : 'Waiting...')}
-                        {agents[selectedAgentId].isStreaming && <span className="animate-pulse">▊</span>}
+                        {answer || (isThinkingInProgress ? '(thinking...)' : (agents[selectedAgentId].isStreaming ? '' : 'Waiting...'))}
+                        {agents[selectedAgentId].isStreaming && !isThinkingInProgress && <span className="animate-pulse">▊</span>}
                       </div>
                     </div>
                   </>
@@ -380,6 +392,14 @@ export function DebatePage() {
                   <div className="flex justify-between">
                     <span className="text-white/40">TOKENS</span>
                     <span className="text-white/60">{agents[selectedAgentId].tokenCount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">TOK/SEC</span>
+                    <span className="text-[#F15A29] font-bold">
+                      {agents[selectedAgentId].tokensPerSecond > 0 
+                        ? `${agents[selectedAgentId].tokensPerSecond.toLocaleString()} t/s`
+                        : '--'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-white/40">STATUS</span>

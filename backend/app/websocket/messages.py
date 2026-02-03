@@ -53,13 +53,6 @@ class PhaseChangeMessage(TypedDict):
     timestamp: int
 
 
-class DebateTimeoutMessage(TypedDict):
-    """Debate reached 12-second hard timeout"""
-    type: Literal["debate_timeout"]
-    message: str
-    timestamp: int
-
-
 class MetricsMessage(TypedDict):
     """Performance metrics during debate"""
     type: Literal["metrics"]
@@ -91,7 +84,6 @@ WebSocketMessage = (
     ErrorMessage |
     ConnectionAckMessage |
     PhaseChangeMessage |
-    DebateTimeoutMessage |
     MetricsMessage |
     AgentDoneMessage |
     AgentErrorMessage
@@ -140,15 +132,6 @@ def create_phase_change(phase: str, active_agents: list[str]) -> PhaseChangeMess
         "type": "phase_change",
         "phase": phase,
         "activeAgents": active_agents,
-        "timestamp": int(datetime.now().timestamp() * 1000)
-    }
-
-
-def create_debate_timeout() -> DebateTimeoutMessage:
-    """Create a debate timeout message"""
-    return {
-        "type": "debate_timeout",
-        "message": "Debate reached 12-second hard timeout",
         "timestamp": int(datetime.now().timestamp() * 1000)
     }
 

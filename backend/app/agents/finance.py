@@ -33,15 +33,9 @@ class FinanceAgent(LLMAgent):
     async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a response to the given query using Cerebras API.
-
-        Args:
-            query: The user's query or message
-            model_override: Optional model ID to override the default
-            use_reasoning: Whether to enable reasoning_effort for deeper analysis
-
-        Yields:
-            Dict containing agent_token messages
         """
+        import asyncio
+        
         self.set_status("processing")
         model_to_use = model_override or self.model
 
@@ -52,12 +46,22 @@ class FinanceAgent(LLMAgent):
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": query}
                 ],
-                "stream": True,
-                "max_tokens": 600
+                "stream": True
             }
             stream = self.client.chat.completions.create(**params)
 
-            for chunk in stream:
+            loop = asyncio.get_event_loop()
+            def get_next_chunk(iterator):
+                try:
+                    return next(iterator)
+                except StopIteration:
+                    return None
+            
+            iterator = iter(stream)
+            while True:
+                chunk = await loop.run_in_executor(None, get_next_chunk, iterator)
+                if chunk is None:
+                    break
                 if chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     yield self._create_token_message(token)

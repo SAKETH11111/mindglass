@@ -26,12 +26,12 @@ export interface GraphEdge {
 
 export const EDGE_COLORS: Record<EdgeType, string> = {
   supports: '#22C55E', // Green
-  refutes: '#EF4444', // Red
+  refutes: '#EF4444', // Red  
   depends: '#3B82F6', // Blue
 } as const;
 
 export const EDGE_STYLES: Record<EdgeType, { strokeWidth: number; dashArray?: string }> = {
-  supports: { strokeWidth: 3 },
-  refutes: { strokeWidth: 3 },
-  depends: { strokeWidth: 2, dashArray: '5,5' },
+  supports: { strokeWidth: 2 },
+  refutes: { strokeWidth: 2 },
+  depends: { strokeWidth: 1.5, dashArray: '5,5' },
 } as const;

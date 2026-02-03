@@ -14,6 +14,11 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}Starting MindGlass...${NC}"
 
+# Kill any existing processes on the ports before starting
+echo -e "${YELLOW}Cleaning up existing processes...${NC}"
+lsof -ti:8000 -ti:5173 2>/dev/null | xargs kill -9 2>/dev/null || true
+sleep 0.5
+
 # Check if .env exists in backend
 if [ ! -f backend/.env ]; then
     echo -e "${RED}Error: backend/.env not found${NC}"
@@ -24,12 +29,15 @@ fi
 # Kill existing processes on exit
 cleanup() {
     echo -e "\n${YELLOW}Shutting down...${NC}"
+    # Kill the entire process group to handle uvicorn's child processes
     if [ -n "$BACKEND_PID" ]; then
-        kill $BACKEND_PID 2>/dev/null || true
+        kill -- -$(ps -o pgid= $BACKEND_PID | grep -o '[0-9]*') 2>/dev/null || kill $BACKEND_PID 2>/dev/null || true
     fi
     if [ -n "$FRONTEND_PID" ]; then
-        kill $FRONTEND_PID 2>/dev/null || true
+        kill -- -$(ps -o pgid= $FRONTEND_PID | grep -o '[0-9]*') 2>/dev/null || kill $FRONTEND_PID 2>/dev/null || true
     fi
+    # Force kill any remaining processes on port 8000 and 5173
+    lsof -ti:8000 -ti:5173 2>/dev/null | xargs kill -9 2>/dev/null || true
     echo -e "${GREEN}Done!${NC}"
 }
 trap cleanup EXIT

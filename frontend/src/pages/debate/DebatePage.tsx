@@ -17,19 +17,20 @@ const formatTokPerSec = (tokenCount: number, elapsedMs: number): string => {
 };
 
 // Parse <think>...</think> tags from response
-const parseThinkTags = (text: string): { thinking: string; answer: string } => {
+const parseThinkTags = (text: string): { thinking: string; answer: string; isThinkingInProgress: boolean } => {
   const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
   if (thinkMatch) {
     const thinking = thinkMatch[1].trim();
     const answer = text.replace(/<think>[\s\S]*?<\/think>/, '').trim();
-    return { thinking, answer };
+    return { thinking, answer, isThinkingInProgress: false };
   }
-  // Handle incomplete think tag (still streaming)
+  // Handle incomplete think tag (still streaming thinking)
   const openThinkMatch = text.match(/<think>([\s\S]*)/);
   if (openThinkMatch && !text.includes('</think>')) {
-    return { thinking: openThinkMatch[1].trim(), answer: '' };
+    return { thinking: openThinkMatch[1].trim(), answer: '', isThinkingInProgress: true };
   }
-  return { thinking: '', answer: text };
+  // No think tags - the text IS the answer
+  return { thinking: '', answer: text, isThinkingInProgress: false };
 };
 
 /**
@@ -400,7 +401,7 @@ export function DebatePage() {
                     {perspectiveAgents.map((agentId) => {
                       const color = AGENT_COLORS[agentId];
                       const agent = agents[agentId];
-                      const { thinking, answer: cleanAnswer } = parseThinkTags(agent.text);
+                      const { thinking, answer: cleanAnswer, isThinkingInProgress } = parseThinkTags(agent.text);
                       
                       // Use controlled state for open/close
                       const isOpen = openAgents.has(agentId);
@@ -480,9 +481,9 @@ export function DebatePage() {
                               </details>
                             )}
                             
-                            {/* Clean answer */}
+                            {/* Clean answer - show thinking content if still in progress */}
                             <div className={`text-[13px] leading-[1.6] text-white/50 ${designMode === 'boxy' ? 'font-mono text-[12px]' : ''}`}>
-                              {cleanAnswer || (agent.isStreaming ? 'Thinking...' : '')}
+                              {cleanAnswer || (isThinkingInProgress ? thinking : (agent.isStreaming ? '' : ''))}
                               {agent.isStreaming && <span className="animate-pulse">▊</span>}
                             </div>
                           </div>
@@ -497,7 +498,7 @@ export function DebatePage() {
             {/* ═══ THE ANSWER (Synthesizer) ═══ */}
             {(() => {
               const agent = agents.synthesizer;
-              const { thinking, answer: cleanAnswer } = parseThinkTags(agent.text);
+              const { thinking, answer: cleanAnswer, isThinkingInProgress } = parseThinkTags(agent.text);
               const isLoading = !agent.text && !agent.isStreaming && AGENT_IDS.slice(0, 7).some(id => agents[id].isStreaming || agents[id].text);
               const isStreaming = agent.isStreaming;
               const hasAnswer = cleanAnswer.length > 0;
@@ -540,7 +541,7 @@ export function DebatePage() {
                   
                   {/* Thinking section for synthesizer */}
                   {thinking && (
-                    <details className="group/think mb-4" open={isStreaming && !cleanAnswer}>
+                    <details className="group/think mb-4" open={isThinkingInProgress}>
                       <summary className={`
                         flex items-center gap-1.5 cursor-pointer list-none text-[10px] text-white/30 hover:text-white/50
                         ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}
@@ -548,7 +549,7 @@ export function DebatePage() {
                         <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                        <span>💭 {designMode === 'boxy' ? 'THINKING' : 'Thinking'}</span>
+                        <span>💭 {designMode === 'boxy' ? 'THINKING' : 'Thinking'} {isThinkingInProgress && <span className="text-yellow-500/60">(in progress)</span>}</span>
                       </summary>
                       <div className={`
                         mt-2 p-3 text-[11px] leading-[1.5] text-white/30 italic max-h-[200px] overflow-y-auto
@@ -558,14 +559,14 @@ export function DebatePage() {
                         }
                       `}>
                         {thinking}
-                        {isStreaming && !cleanAnswer && <span className="animate-pulse">▊</span>}
+                        {isThinkingInProgress && <span className="animate-pulse">▊</span>}
                       </div>
                     </details>
                   )}
                   
                   {/* Clean Answer Text */}
                   <div className={`text-[15px] leading-[1.8] ${hasAnswer ? 'text-white/80' : 'text-white/40'} ${designMode === 'boxy' ? 'font-mono text-[14px]' : ''}`}>
-                    {cleanAnswer || (isLoading ? 'Analyzing your question from multiple angles...' : isStreaming ? '' : 'Waiting to synthesize...')}
+                    {cleanAnswer || (isLoading ? 'Analyzing your question from multiple angles...' : isThinkingInProgress ? '(thinking...)' : isStreaming ? '' : 'Waiting to synthesize...')}
                     {isStreaming && cleanAnswer && <span className="animate-pulse">▊</span>}
                   </div>
                 </div>

@@ -86,17 +86,18 @@ export function useWebSocket() {
             }
 
             case 'phase_start': {
-              // New phased streaming message - set current phase name
-              console.log(`Phase ${data.phase} started: ${data.name}`);
-              // Set phase using the numeric phase to named phase mapping
-              const phaseNames: Record<number, 'dispatch' | 'conflict' | 'synthesis' | 'convergence'> = {
-                1: 'dispatch',
-                2: 'conflict', 
-                3: 'synthesis',
-                4: 'convergence'
-              };
-              const mappedPhase = phaseNames[data.phase] || 'dispatch';
-              setPhase(mappedPhase, []);
+              // New round-based streaming message - use round name directly
+              console.log(`Round ${data.phase} started: ${data.name}`);
+              // Use the round name directly as the phase
+              const phaseName = data.name || 'dispatch';
+              setPhase(phaseName, data.agents || []);
+              break;
+            }
+
+            case 'round_start': {
+              // New round-based debate message
+              console.log(`Round ${data.round} started: ${data.name}`);
+              setPhase(data.name, data.agents || []);
               break;
             }
 
@@ -108,12 +109,6 @@ export function useWebSocket() {
             case 'debate_complete': {
               endDebate();
               console.log('Debate complete');
-              break;
-            }
-
-            case 'debate_timeout': {
-              endDebate();
-              console.log('Debate timeout - 12 second limit reached');
               break;
             }
 

@@ -43,6 +43,8 @@ class AnalystAgent(LLMAgent):
         Yields:
             Dict containing agent_token messages
         """
+        import asyncio
+        
         self.set_status("processing")
         model_to_use = model_override or self.model
 
@@ -54,15 +56,27 @@ class AnalystAgent(LLMAgent):
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": query}
                 ],
-                "stream": True,
-                "max_tokens": 600
+                "stream": True
             }
             
             # Create streaming completion
             stream = self.client.chat.completions.create(**params)
 
-            # Stream tokens to client
-            for chunk in stream:
+            # Stream tokens to client - use run_in_executor to not block event loop
+            # The Cerebras SDK returns a sync iterator, so we need to iterate in a thread
+            loop = asyncio.get_event_loop()
+            
+            def get_next_chunk(iterator):
+                try:
+                    return next(iterator)
+                except StopIteration:
+                    return None
+            
+            iterator = iter(stream)
+            while True:
+                chunk = await loop.run_in_executor(None, get_next_chunk, iterator)
+                if chunk is None:
+                    break
                 if chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     yield self._create_token_message(token)

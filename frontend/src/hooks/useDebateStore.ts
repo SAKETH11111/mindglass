@@ -78,6 +78,8 @@ const createInitialAgents = (): Record<AgentId, AgentState> => {
       isActive: false,
       isStreaming: false,
       tokenCount: 0,
+      tokensPerSecond: 0,
+      streamStartTime: null,
     };
   }
   return agents as Record<AgentId, AgentState>;
@@ -123,17 +125,32 @@ export const useDebateStore = create<DebateState>()(
       }),
 
     appendToken: (agentId, content) =>
-      set((state) => ({
-        agents: {
-          ...state.agents,
-          [agentId]: {
-            ...state.agents[agentId],
-            text: state.agents[agentId].text + content,
-            isStreaming: true,
-            tokenCount: state.agents[agentId].tokenCount + 1,
+      set((state) => {
+        const agent = state.agents[agentId];
+        const now = Date.now();
+        
+        // Initialize streamStartTime if this is the first token
+        const streamStartTime = agent.streamStartTime || now;
+        const newTokenCount = agent.tokenCount + 1;
+        
+        // Calculate tokens per second
+        const elapsedSeconds = (now - streamStartTime) / 1000;
+        const tokensPerSecond = elapsedSeconds > 0 ? Math.round(newTokenCount / elapsedSeconds) : 0;
+        
+        return {
+          agents: {
+            ...state.agents,
+            [agentId]: {
+              ...agent,
+              text: agent.text + content,
+              isStreaming: true,
+              tokenCount: newTokenCount,
+              tokensPerSecond,
+              streamStartTime,
+            },
           },
-        },
-      })),
+        };
+      }),
 
     setPhase: (phase, activeAgents) =>
       set((state) => {
