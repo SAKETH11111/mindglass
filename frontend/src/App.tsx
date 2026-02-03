@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Send, AlertCircle, Loader2 } from 'lucide-react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDebateStore } from './hooks/useDebateStore'
@@ -10,9 +10,11 @@ import { V1Page } from '@/pages/v1/V1Page'
 import { V2Page } from '@/pages/v2/V2Page'
 import { V3Page } from '@/pages/v3/V3Page'
 import { V4Page } from '@/pages/v4/V4Page'
+import { DebatePage } from '@/pages/debate'
 import { AgentsPanel } from '@/components/AgentsPanel'
 import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
 import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
+import { DotMatrixText } from '@/components/DotMatrixText'
 
 // DiceBear Notionists avatar URLs for each agent
 const AGENT_AVATARS: Record<AgentId, string> = {
@@ -31,36 +33,18 @@ function HomePage() {
   const [isFocused, setIsFocused] = useState(false)
   const [isAgentsPanelOpen, setIsAgentsPanelOpen] = useState(false)
   const [selectedTier, setSelectedTier] = useState<ModelTier>('pro')
+  const navigate = useNavigate()
 
   const { sendMessage, isReady } = useWebSocket()
   const { agentText, isStreaming, currentAgentId, clearResponse, error } = useDebateStore()
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputValue.trim() || !isReady) return
+    if (!inputValue.trim()) return
 
-    // Clear previous response
-    clearResponse()
-
-    // Send start_debate message
-    const message: StartDebateMessage = {
-      type: 'start_debate',
-      query: inputValue.trim(),
-    }
-
-    const sent = sendMessage(message)
-    if (sent) {
-      setInputValue("")
-    }
-  }, [inputValue, isReady, sendMessage, clearResponse])
-
-  // Get status for indicator
-  const getStatus = () => {
-    if (error) return "error"
-    if (isStreaming) return "streaming"
-    if (!isReady) return "connecting"
-    return "ready"
-  }
+    // Navigate to debate page with query
+    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}`)
+  }, [inputValue, navigate])
 
   // Use centralized agent color constants
   const agentId = (currentAgentId as AgentId) || 'analyst'
@@ -78,52 +62,18 @@ function HomePage() {
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         
         <div className="px-6 py-3">
-          <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-            {/* Left: Logo & Brand */}
-            <div className="flex items-center gap-3 group cursor-default">
-              {/* Logo with subtle glow */}
-              <div className="relative">
-                <div className="absolute inset-0 bg-white/20 rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                <img 
-                  src="/cerebras-logo.svg" 
-                  alt="Cerebras" 
-                  className="relative w-7 h-7 transition-transform duration-300 group-hover:scale-105" 
-                />
-              </div>
-              <span className="text-sm font-medium text-white/90 tracking-tight">
-                Cerebras
-              </span>
-            </div>
-
-            {/* Right: Status & Actions */}
-            <div className="flex items-center gap-3">
-              {/* Compact Status Pill */}
-              <div className="flex items-center gap-2 h-7 px-3 rounded-full bg-white/[0.03] border border-white/[0.06]">
-                <span className={`
-                  w-1.5 h-1.5 rounded-full
-                  ${getStatus() === 'ready' ? 'bg-emerald-400' : 
-                    getStatus() === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}
-                `} />
-                <span className="text-[11px] font-medium text-white/50 uppercase tracking-wide">
-                  {getStatus()}
-                </span>
-              </div>
-              
-              {/* Separator */}
-              <div className="w-px h-4 bg-white/[0.06]" />
-              
-              {/* GitHub Link */}
-              <a
-                href="https://github.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center w-7 h-7 rounded-full text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-              </a>
-            </div>
+          <div className="max-w-[1600px] mx-auto flex items-center justify-end">
+            {/* Right: GitHub Link */}
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center w-7 h-7 text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-all duration-200"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+              </svg>
+            </a>
           </div>
         </div>
         
@@ -136,35 +86,40 @@ function HomePage() {
         <div className="w-full max-w-2xl space-y-8">
           {/* Title */}
           <div className="text-center space-y-4">
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <span 
-                className="text-white drop-shadow-[0_0_60px_rgba(255,255,255,0.3)]"
-              >
-                Prism
-              </span>
-            </h1>
-            <p className="text-lg text-white/70 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
-              8 AI perspectives analyze your decision.{' '}
-              <span className="text-white font-semibold">Instantly.</span>
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
+              <DotMatrixText
+                text="PRISM"
+                dotWidth={16}
+                dotHeight={14}
+                dotGap={4}
+                letterGap={24}
+                revealDelay={35}
+                activeColor="#ffffff"
+                inactiveColor="rgba(255,255,255,0.08)"
+              />
+            </div>
+            <p className="text-base text-white/60 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 font-mono tracking-wide">
+              8 AI PERSPECTIVES ANALYZE YOUR DECISION —{' '}
+              <span className="text-white">INSTANTLY</span>
             </p>
           </div>
 
           {/* Error Banner */}
           {error && (
-            <div className="mb-6 p-4 rounded-xl bg-red-500/10 backdrop-blur-xl border border-red-500/30 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="mb-6 p-4 bg-red-950/50 border-2 border-red-500/50 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-              <p className="text-red-400 text-sm">{error}</p>
+              <p className="text-red-400 text-sm font-mono">[ERROR] {error}</p>
             </div>
           )}
 
-          {/* Input Card - Glassmorphism style */}
-          <div 
+          {/* Input Card - Digital/Blocky style */}
+          <div
             className={`
-              rounded-2xl p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300
-              backdrop-blur-xl bg-white/5 border border-white/10
+              p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300
+              bg-[#111] border-2 border-white/30
               transition-all duration-200
               ${isFocused
-                ? 'border-white/30 shadow-[0_0_30px_rgba(255,255,255,0.1)]'
+                ? 'border-white/60 shadow-[0_0_40px_rgba(255,255,255,0.1)]'
                 : ''
               }
             `}
@@ -181,22 +136,22 @@ function HomePage() {
                   placeholder={!isReady ? "Connecting..." : isStreaming ? "Agent is responding..." : "What decision do you need help with?"}
                   disabled={!isReady || isStreaming}
                   className="
-                    flex-1 bg-transparent text-white placeholder-white/40
-                    outline-none text-base
-                    font-sans py-2
+                    flex-1 bg-transparent text-white placeholder-white/30
+                    outline-none text-base tracking-wide
+                    font-mono py-2
                     disabled:opacity-60
                   "
                 />
               </div>
               
               {/* Bottom bar with icons and submit */}
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-white/10">
                 {/* Left side - attach button and model selector */}
                 <div className="flex items-center gap-2">
                   {/* Attach button */}
                   <button
                     type="button"
-                    className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 text-white/50 hover:text-white hover:border-white/30 hover:bg-white/5 transition-all duration-200"
+                    className="w-8 h-8 flex items-center justify-center border border-white/20 text-white/50 hover:text-white hover:border-white/50 hover:bg-white/10 transition-all duration-200"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -229,8 +184,8 @@ function HomePage() {
                         <div key={agent} className="group relative">
                           <div
                             className={`
-                              w-7 h-7 rounded-full overflow-hidden
-                              border-2 border-black/50
+                              w-7 h-7 overflow-hidden
+                              border border-white/30
                               transition-all duration-200 cursor-pointer
                               ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}
                             `}
@@ -255,7 +210,7 @@ function HomePage() {
                       )
                     })}
                     {/* +2 more indicator */}
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/10 border-2 border-black/50 text-[10px] text-white font-medium hover:bg-white/20 transition-colors">
+                    <div className="w-7 h-7 flex items-center justify-center bg-white/10 border border-white/30 text-[10px] text-white font-medium hover:bg-white/20 transition-colors">
                       +2
                     </div>
                   </button>
@@ -266,11 +221,11 @@ function HomePage() {
                     disabled={!inputValue.trim() || !isReady || isStreaming}
                     className={`
                       flex items-center justify-center
-                      w-8 h-8 rounded-lg
+                      w-8 h-8
                       transition-all duration-200
                       ${inputValue.trim() && isReady && !isStreaming
-                        ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)]'
-                        : 'bg-white/10 text-white/30 cursor-not-allowed'
+                        ? 'bg-white text-black hover:bg-white/90'
+                        : 'bg-white/10 text-white/30 cursor-not-allowed border border-white/20'
                       }
                     `}
                   >
@@ -289,18 +244,19 @@ function HomePage() {
           {!agentText && (
             <div className="flex flex-wrap justify-center gap-2 animate-in fade-in duration-700 delay-500">
               {[
-                "Should I take this job offer?",
-                "Is now a good time to buy a house?",
-                "Should my startup pivot?",
+                "Is remote work better for productivity?",
+                "Should my startup focus on growth or profit?",
+                "Should I buy Tesla stock right now?",
+                "Is it time to hire or automate?",
               ].map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
                   onClick={() => setInputValue(prompt)}
                   className="
-                    px-4 py-2 rounded-full text-sm
-                    bg-white/5 backdrop-blur-xl border border-white/10
-                    text-white/60 hover:text-white hover:border-white/30 hover:bg-white/10
+                    px-4 py-2 text-sm font-mono tracking-wide
+                    bg-[#111] border border-white/20
+                    text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]
                     transition-all duration-200
                   "
                 >
@@ -312,13 +268,13 @@ function HomePage() {
 
           {/* Agent Response */}
           {(currentAgentId || agentText) && (
-            <div className="rounded-2xl p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 backdrop-blur-xl bg-white/5 border border-white/10">
+            <div className="p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#111] border-2 border-white/30">
               {/* Agent header */}
               <div className="flex items-center gap-3 mb-4">
                 <button
                   type="button"
                   onClick={() => setIsAgentsPanelOpen(true)}
-                  className="w-10 h-10 rounded-full overflow-hidden border-2 hover:scale-105 transition-transform cursor-pointer"
+                  className="w-10 h-10 overflow-hidden border-2 hover:scale-105 transition-transform cursor-pointer"
                   style={{ backgroundColor: agentColor, borderColor: agentColor }}
                 >
                   {currentAgentId && (
@@ -331,14 +287,14 @@ function HomePage() {
                 </button>
                 <div className="flex flex-col">
                   <span
-                    className="font-semibold text-sm uppercase tracking-wider"
+                    className="font-mono text-sm uppercase tracking-widest"
                     style={{ color: agentColor }}
                   >
                     {agentName}
                   </span>
                   {isStreaming && (
-                    <span className="text-white/50 text-xs animate-pulse">
-                      typing...
+                    <span className="text-white/50 text-xs font-mono animate-pulse">
+                      TYPING...
                     </span>
                   )}
                 </div>
@@ -356,10 +312,10 @@ function HomePage() {
 
               {/* Token count */}
               {agentText.length > 0 && (
-                <div className="flex justify-end pt-2 border-t border-white/10">
-                  <span className="text-white/50 text-xs">
-                    {agentText.length} characters
-                    {isStreaming && ' • streaming'}
+                <div className="flex justify-end pt-2 border-t-2 border-white/10">
+                  <span className="text-white/50 text-xs font-mono">
+                    {agentText.length} chars
+                    {isStreaming && ' [streaming]'}
                   </span>
                 </div>
               )}
@@ -369,12 +325,18 @@ function HomePage() {
         </div>
       </main>
 
-      {/* Footer - minimal */}
+      {/* Footer */}
       <footer className="fixed bottom-0 left-0 right-0 px-6 py-4">
         <div className="max-w-[1600px] mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-2 text-xs text-white/40">
-            <span>Powered by</span>
-            <span className="text-white/70 font-medium">Cerebras</span>
+          <div className="flex items-center gap-3 group cursor-default">
+            <img
+              src="/cerebras-logo.svg"
+              alt="Cerebras"
+              className="w-6 h-6"
+            />
+            <span className="text-sm font-mono text-white/70 tracking-wide">
+              CEREBRAS
+            </span>
           </div>
         </div>
       </footer>
@@ -396,6 +358,9 @@ function App() {
       <Routes>
         {/* Root - Home page */}
         <Route path="/" element={<HomePage />} />
+        
+        {/* Debate Canvas - Main experience */}
+        <Route path="/debate" element={<DebatePage />} />
         
         {/* V1 - Sidebar layout */}
         <Route path="/v1" element={<V1Page />} />

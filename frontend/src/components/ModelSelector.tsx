@@ -64,18 +64,19 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         className={`
-          group flex items-center gap-2 h-8 px-3 rounded-full
-          border transition-all duration-300 ease-out
-          ${disabled 
-            ? 'opacity-50 cursor-not-allowed border-white/10 text-white/40' 
+          group flex items-center gap-2 h-8 px-3
+          border-2 transition-all duration-200
+          font-mono text-xs tracking-wide
+          ${disabled
+            ? 'opacity-50 cursor-not-allowed border-white/20 text-white/40'
             : isOpen
-              ? 'border-white/20 bg-white/10 shadow-[0_0_20px_rgba(255,255,255,0.05)]'
-              : 'border-white/10 hover:border-white/15 hover:bg-white/[0.03]'
+              ? 'border-white/50 bg-white/10'
+              : 'border-white/30 hover:border-white/40 hover:bg-white/5'
           }
         `}
       >
         <div className={`
-          flex items-center justify-center w-4 h-4 rounded-full transition-all duration-300
+          flex items-center justify-center w-4 h-4 transition-all duration-200
           ${selectedTier === 'fast' ? 'bg-emerald-500/20' : 'bg-violet-500/20'}
         `}>
           {selectedTier === 'fast' ? (
@@ -84,12 +85,12 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
             <Sparkles className="w-2.5 h-2.5 text-violet-400" />
           )}
         </div>
-        <span className="text-xs font-medium text-white/90">
+        <span className="text-white/90 uppercase">
           {selectedTier === 'fast' ? 'Fast' : 'Pro'}
         </span>
-        <ChevronUp 
+        <ChevronUp
           className={`
-            w-3 h-3 text-white/40 transition-all duration-300 ease-out
+            w-3 h-3 text-white/40 transition-all duration-200
             ${isOpen ? 'rotate-0 text-white/60' : 'rotate-180'}
           `}
         />
@@ -107,15 +108,12 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
               z-50
             "
           >
-            {/* Glow effect */}
-            <div className="absolute -inset-1 bg-gradient-to-b from-white/5 to-transparent rounded-2xl blur-xl" />
-            
             {/* Main dropdown */}
-            <div 
+            <div
               className="
                 relative overflow-hidden
-                backdrop-blur-2xl bg-[#0c0c0c]/95 
-                border border-white/[0.08] rounded-2xl
+                bg-[#111]
+                border-2 border-white/30
                 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)]
               "
               style={{
@@ -123,17 +121,14 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
               }}
             >
               {/* Header */}
-              <div className="px-3 pt-3 pb-2">
-                <p className="text-[10px] font-medium text-white/30 uppercase tracking-wider">
-                  Select Model
+              <div className="px-3 pt-3 pb-2 border-b-2 border-white/10">
+                <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest">
+                  [SELECT MODEL]
                 </p>
               </div>
-              
-              {/* Divider */}
-              <div className="mx-3 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
               {/* Options */}
-              <div className="p-1.5 space-y-0.5">
+              <div className="p-2 space-y-1">
                 {/* Fast option */}
                 <button
                   type="button"
@@ -142,38 +137,39 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
                     setIsOpen(false)
                   }}
                   className={`
-                    w-full flex items-center gap-3 p-2.5 rounded-xl
-                    transition-all duration-200 ease-out group/option
-                    ${selectedTier === 'fast' 
-                      ? 'bg-emerald-500/[0.08]' 
-                      : 'hover:bg-white/[0.04]'
+                    w-full flex items-center gap-3 p-2.5
+                    border-2 transition-all duration-200 group/option
+                    font-mono
+                    ${selectedTier === 'fast'
+                      ? 'border-emerald-500/50 bg-emerald-500/10'
+                      : 'border-white/10 hover:border-white/30 hover:bg-white/5'
                     }
                   `}
                 >
                   <div className={`
-                    w-9 h-9 rounded-xl flex items-center justify-center
+                    w-8 h-8 flex items-center justify-center
                     transition-all duration-200
-                    ${selectedTier === 'fast' 
-                      ? 'bg-emerald-500/20 shadow-[0_0_20px_rgba(52,211,153,0.15)]' 
-                      : 'bg-white/[0.05] group-hover/option:bg-white/[0.08]'
+                    ${selectedTier === 'fast'
+                      ? 'bg-emerald-500/20'
+                      : 'bg-white/5 group-hover/option:bg-white/10'
                     }
                   `}>
                     <Zap className={`w-4 h-4 transition-colors ${selectedTier === 'fast' ? 'text-emerald-400' : 'text-white/50'}`} />
                   </div>
                   <div className="flex-1 text-left">
-                    <span className={`text-sm font-medium transition-colors ${selectedTier === 'fast' ? 'text-white' : 'text-white/80'}`}>
+                    <span className={`text-sm uppercase tracking-wide transition-colors ${selectedTier === 'fast' ? 'text-white' : 'text-white/70'}`}>
                       Fast
                     </span>
-                    <p className="text-[10px] text-white/30 font-mono mt-0.5">
+                    <p className="text-[10px] text-white/40 mt-0.5">
                       {MODEL_TIERS.fast.modelName}
                     </p>
                   </div>
                   <div className={`
-                    w-5 h-5 rounded-full flex items-center justify-center
+                    w-5 h-5 flex items-center justify-center
                     transition-all duration-200
-                    ${selectedTier === 'fast' 
-                      ? 'bg-emerald-500 shadow-[0_0_10px_rgba(52,211,153,0.4)]' 
-                      : 'border border-white/10'
+                    ${selectedTier === 'fast'
+                      ? 'bg-emerald-500'
+                      : 'border-2 border-white/20'
                     }
                   `}>
                     {selectedTier === 'fast' && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
@@ -188,38 +184,39 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
                     setIsOpen(false)
                   }}
                   className={`
-                    w-full flex items-center gap-3 p-2.5 rounded-xl
-                    transition-all duration-200 ease-out group/option
-                    ${selectedTier === 'pro' 
-                      ? 'bg-violet-500/[0.08]' 
-                      : 'hover:bg-white/[0.04]'
+                    w-full flex items-center gap-3 p-2.5
+                    border-2 transition-all duration-200 group/option
+                    font-mono
+                    ${selectedTier === 'pro'
+                      ? 'border-violet-500/50 bg-violet-500/10'
+                      : 'border-white/10 hover:border-white/30 hover:bg-white/5'
                     }
                   `}
                 >
                   <div className={`
-                    w-9 h-9 rounded-xl flex items-center justify-center
+                    w-8 h-8 flex items-center justify-center
                     transition-all duration-200
-                    ${selectedTier === 'pro' 
-                      ? 'bg-violet-500/20 shadow-[0_0_20px_rgba(167,139,250,0.15)]' 
-                      : 'bg-white/[0.05] group-hover/option:bg-white/[0.08]'
+                    ${selectedTier === 'pro'
+                      ? 'bg-violet-500/20'
+                      : 'bg-white/5 group-hover/option:bg-white/10'
                     }
                   `}>
                     <Sparkles className={`w-4 h-4 transition-colors ${selectedTier === 'pro' ? 'text-violet-400' : 'text-white/50'}`} />
                   </div>
                   <div className="flex-1 text-left">
-                    <span className={`text-sm font-medium transition-colors ${selectedTier === 'pro' ? 'text-white' : 'text-white/80'}`}>
+                    <span className={`text-sm uppercase tracking-wide transition-colors ${selectedTier === 'pro' ? 'text-white' : 'text-white/70'}`}>
                       Pro
                     </span>
-                    <p className="text-[10px] text-white/30 font-mono mt-0.5">
+                    <p className="text-[10px] text-white/40 mt-0.5">
                       {MODEL_TIERS.pro.modelName}
                     </p>
                   </div>
                   <div className={`
-                    w-5 h-5 rounded-full flex items-center justify-center
+                    w-5 h-5 flex items-center justify-center
                     transition-all duration-200
-                    ${selectedTier === 'pro' 
-                      ? 'bg-violet-500 shadow-[0_0_10px_rgba(167,139,250,0.4)]' 
-                      : 'border border-white/10'
+                    ${selectedTier === 'pro'
+                      ? 'bg-violet-500'
+                      : 'border-2 border-white/20'
                     }
                   `}>
                     {selectedTier === 'pro' && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
@@ -230,7 +227,7 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
             </div>
 
             {/* Arrow */}
-            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-[#0c0c0c]/95 border-r border-b border-white/[0.08]" />
+            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-[#111] border-r-2 border-b-2 border-white/30" />
           </div>
         </>
       )}
