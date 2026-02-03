@@ -26,9 +26,10 @@ interface ModelSelectorProps {
   selectedTier: ModelTier
   onTierChange: (tier: ModelTier) => void
   disabled?: boolean
+  designMode?: 'boxy' | 'round'
 }
 
-export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSelectorProps) {
+export function ModelSelector({ selectedTier, onTierChange, disabled, designMode = 'boxy' }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -65,13 +66,22 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
         disabled={disabled}
         className={`
           group flex items-center gap-2 h-8 px-3
-          border-2 transition-all duration-200
-          font-mono text-xs tracking-wide
-          ${disabled
-            ? 'opacity-50 cursor-not-allowed border-white/20 text-white/40'
-            : isOpen
-              ? 'border-white/50 bg-white/10'
-              : 'border-white/30 hover:border-white/40 hover:bg-white/5'
+          transition-all duration-200
+          ${designMode === 'boxy'
+            ? `border-2 font-mono text-xs tracking-wide uppercase
+               ${disabled
+                 ? 'opacity-50 cursor-not-allowed border-white/20 text-white/40'
+                 : isOpen
+                   ? 'border-white/50 bg-white/10'
+                   : 'border-white/30 hover:border-white/40 hover:bg-white/5'
+               }`
+            : `border rounded-full
+               ${disabled
+                 ? 'opacity-50 cursor-not-allowed border-white/10 text-white/40'
+                 : isOpen
+                   ? 'border-white/20 bg-white/10'
+                   : 'border-white/10 hover:border-white/15 hover:bg-white/[0.03]'
+               }`
           }
         `}
       >
@@ -85,7 +95,7 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
             <Sparkles className="w-2.5 h-2.5 text-violet-400" />
           )}
         </div>
-        <span className="text-white/90 uppercase">
+        <span className={`text-white/90 ${designMode === 'boxy' ? 'uppercase' : ''}`}>
           {selectedTier === 'fast' ? 'Fast' : 'Pro'}
         </span>
         <ChevronUp
@@ -110,25 +120,27 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
           >
             {/* Main dropdown */}
             <div
-              className="
+              className={`
                 relative overflow-hidden
-                bg-[#111]
-                border-2 border-white/30
                 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)]
-              "
+                ${designMode === 'boxy'
+                  ? 'bg-[#111] border-2 border-white/30'
+                  : 'backdrop-blur-2xl bg-[#0c0c0c]/95 border border-white/[0.08] rounded-2xl'
+                }
+              `}
               style={{
                 animation: 'dropdownIn 200ms cubic-bezier(0.16, 1, 0.3, 1)',
               }}
             >
               {/* Header */}
-              <div className="px-3 pt-3 pb-2 border-b-2 border-white/10">
-                <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest">
-                  [SELECT MODEL]
+              <div className={`px-3 pt-3 pb-2 ${designMode === 'boxy' ? 'border-b-2 border-white/10' : ''}`}>
+                <p className={`text-[10px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase tracking-widest' : 'font-medium uppercase tracking-wider'}`}>
+                  {designMode === 'boxy' ? '[SELECT MODEL]' : 'Select Model'}
                 </p>
               </div>
 
               {/* Options */}
-              <div className="p-2 space-y-1">
+              <div className={`${designMode === 'boxy' ? 'p-2 space-y-1' : 'p-1.5 space-y-0.5'}`}>
                 {/* Fast option */}
                 <button
                   type="button"
@@ -138,38 +150,39 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
                   }}
                   className={`
                     w-full flex items-center gap-3 p-2.5
-                    border-2 transition-all duration-200 group/option
-                    font-mono
-                    ${selectedTier === 'fast'
-                      ? 'border-emerald-500/50 bg-emerald-500/10'
-                      : 'border-white/10 hover:border-white/30 hover:bg-white/5'
+                    transition-all duration-200 group/option
+                    ${designMode === 'boxy'
+                      ? `border-2 font-mono ${selectedTier === 'fast' ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-white/10 hover:border-white/30 hover:bg-white/5'}`
+                      : `rounded-xl ${selectedTier === 'fast' ? 'bg-emerald-500/[0.08]' : 'hover:bg-white/[0.04]'}`
                     }
                   `}
                 >
                   <div className={`
-                    w-8 h-8 flex items-center justify-center
+                    flex items-center justify-center
                     transition-all duration-200
+                    ${designMode === 'boxy' ? 'w-8 h-8' : 'w-9 h-9 rounded-xl'}
                     ${selectedTier === 'fast'
-                      ? 'bg-emerald-500/20'
-                      : 'bg-white/5 group-hover/option:bg-white/10'
+                      ? designMode === 'boxy' ? 'bg-emerald-500/20' : 'bg-emerald-500/20 shadow-[0_0_20px_rgba(52,211,153,0.15)]'
+                      : designMode === 'boxy' ? 'bg-white/5 group-hover/option:bg-white/10' : 'bg-white/[0.05] group-hover/option:bg-white/[0.08]'
                     }
                   `}>
                     <Zap className={`w-4 h-4 transition-colors ${selectedTier === 'fast' ? 'text-emerald-400' : 'text-white/50'}`} />
                   </div>
                   <div className="flex-1 text-left">
-                    <span className={`text-sm uppercase tracking-wide transition-colors ${selectedTier === 'fast' ? 'text-white' : 'text-white/70'}`}>
+                    <span className={`text-sm transition-colors ${selectedTier === 'fast' ? 'text-white' : designMode === 'boxy' ? 'text-white/70' : 'text-white/80'} ${designMode === 'boxy' ? 'uppercase tracking-wide' : 'font-medium'}`}>
                       Fast
                     </span>
-                    <p className="text-[10px] text-white/40 mt-0.5">
+                    <p className={`text-[10px] mt-0.5 ${designMode === 'boxy' ? 'text-white/40' : 'text-white/30 font-mono'}`}>
                       {MODEL_TIERS.fast.modelName}
                     </p>
                   </div>
                   <div className={`
-                    w-5 h-5 flex items-center justify-center
+                    flex items-center justify-center
                     transition-all duration-200
+                    ${designMode === 'boxy' ? 'w-5 h-5' : 'w-5 h-5 rounded-full'}
                     ${selectedTier === 'fast'
                       ? 'bg-emerald-500'
-                      : 'border-2 border-white/20'
+                      : designMode === 'boxy' ? 'border-2 border-white/20' : 'border border-white/10'
                     }
                   `}>
                     {selectedTier === 'fast' && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
@@ -185,38 +198,39 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
                   }}
                   className={`
                     w-full flex items-center gap-3 p-2.5
-                    border-2 transition-all duration-200 group/option
-                    font-mono
-                    ${selectedTier === 'pro'
-                      ? 'border-violet-500/50 bg-violet-500/10'
-                      : 'border-white/10 hover:border-white/30 hover:bg-white/5'
+                    transition-all duration-200 group/option
+                    ${designMode === 'boxy'
+                      ? `border-2 font-mono ${selectedTier === 'pro' ? 'border-violet-500/50 bg-violet-500/10' : 'border-white/10 hover:border-white/30 hover:bg-white/5'}`
+                      : `rounded-xl ${selectedTier === 'pro' ? 'bg-violet-500/[0.08]' : 'hover:bg-white/[0.04]'}`
                     }
                   `}
                 >
                   <div className={`
-                    w-8 h-8 flex items-center justify-center
+                    flex items-center justify-center
                     transition-all duration-200
+                    ${designMode === 'boxy' ? 'w-8 h-8' : 'w-9 h-9 rounded-xl'}
                     ${selectedTier === 'pro'
-                      ? 'bg-violet-500/20'
-                      : 'bg-white/5 group-hover/option:bg-white/10'
+                      ? designMode === 'boxy' ? 'bg-violet-500/20' : 'bg-violet-500/20 shadow-[0_0_20px_rgba(167,139,250,0.15)]'
+                      : designMode === 'boxy' ? 'bg-white/5 group-hover/option:bg-white/10' : 'bg-white/[0.05] group-hover/option:bg-white/[0.08]'
                     }
                   `}>
                     <Sparkles className={`w-4 h-4 transition-colors ${selectedTier === 'pro' ? 'text-violet-400' : 'text-white/50'}`} />
                   </div>
                   <div className="flex-1 text-left">
-                    <span className={`text-sm uppercase tracking-wide transition-colors ${selectedTier === 'pro' ? 'text-white' : 'text-white/70'}`}>
+                    <span className={`text-sm transition-colors ${selectedTier === 'pro' ? 'text-white' : designMode === 'boxy' ? 'text-white/70' : 'text-white/80'} ${designMode === 'boxy' ? 'uppercase tracking-wide' : 'font-medium'}`}>
                       Pro
                     </span>
-                    <p className="text-[10px] text-white/40 mt-0.5">
+                    <p className={`text-[10px] mt-0.5 ${designMode === 'boxy' ? 'text-white/40' : 'text-white/30 font-mono'}`}>
                       {MODEL_TIERS.pro.modelName}
                     </p>
                   </div>
                   <div className={`
-                    w-5 h-5 flex items-center justify-center
+                    flex items-center justify-center
                     transition-all duration-200
+                    ${designMode === 'boxy' ? 'w-5 h-5' : 'w-5 h-5 rounded-full'}
                     ${selectedTier === 'pro'
                       ? 'bg-violet-500'
-                      : 'border-2 border-white/20'
+                      : designMode === 'boxy' ? 'border-2 border-white/20' : 'border border-white/10'
                     }
                   `}>
                     {selectedTier === 'pro' && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
@@ -227,7 +241,7 @@ export function ModelSelector({ selectedTier, onTierChange, disabled }: ModelSel
             </div>
 
             {/* Arrow */}
-            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-[#111] border-r-2 border-b-2 border-white/30" />
+            <div className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 ${designMode === 'boxy' ? 'bg-[#111] border-r-2 border-b-2 border-white/30' : 'bg-[#0c0c0c]/95 border-r border-b border-white/[0.08]'}`} />
           </div>
         </>
       )}

@@ -33,6 +33,7 @@ function HomePage() {
   const [isFocused, setIsFocused] = useState(false)
   const [isAgentsPanelOpen, setIsAgentsPanelOpen] = useState(false)
   const [selectedTier, setSelectedTier] = useState<ModelTier>('pro')
+  const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy')
   const navigate = useNavigate()
 
   const { sendMessage, isReady } = useWebSocket()
@@ -60,9 +61,34 @@ function HomePage() {
       <header className="fixed top-0 left-0 right-0 z-40">
         {/* Subtle top line accent */}
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-        
+
         <div className="px-6 py-3">
-          <div className="max-w-[1600px] mx-auto flex items-center justify-end">
+          <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+            {/* Left: Design Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-white/30 font-mono uppercase tracking-wider">Design:</span>
+              <button
+                onClick={() => setDesignMode('boxy')}
+                className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all ${
+                  designMode === 'boxy'
+                    ? 'bg-white text-black'
+                    : 'bg-transparent text-white/50 border border-white/20 hover:text-white/70'
+                }`}
+              >
+                Boxy
+              </button>
+              <button
+                onClick={() => setDesignMode('round')}
+                className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all ${
+                  designMode === 'round'
+                    ? 'bg-white text-black'
+                    : 'bg-transparent text-white/50 border border-white/20 hover:text-white/70'
+                }`}
+              >
+                Round
+              </button>
+            </div>
+
             {/* Right: GitHub Link */}
             <a
               href="https://github.com"
@@ -86,41 +112,59 @@ function HomePage() {
         <div className="w-full max-w-2xl space-y-8">
           {/* Title */}
           <div className="text-center space-y-4">
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
-              <DotMatrixText
-                text="PRISM"
-                dotWidth={16}
-                dotHeight={14}
-                dotGap={4}
-                letterGap={24}
-                revealDelay={35}
-                activeColor="#ffffff"
-                inactiveColor="rgba(255,255,255,0.08)"
-              />
-            </div>
-            <p className="text-base text-white/60 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 font-mono tracking-wide">
-              8 AI PERSPECTIVES ANALYZE YOUR DECISION —{' '}
-              <span className="text-white">INSTANTLY</span>
+            {designMode === 'boxy' ? (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
+                <DotMatrixText
+                  text="PRISM"
+                  dotWidth={16}
+                  dotHeight={14}
+                  dotGap={4}
+                  letterGap={24}
+                  revealDelay={35}
+                  activeColor="#ffffff"
+                  inactiveColor="rgba(255,255,255,0.08)"
+                />
+              </div>
+            ) : (
+              <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-700 py-8">
+                <span className="text-white drop-shadow-[0_0_60px_rgba(255,255,255,0.3)]">
+                  Prism
+                </span>
+              </h1>
+            )}
+            <p className={`text-base max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 ${
+              designMode === 'boxy' ? 'text-white/60 font-mono tracking-wide' : 'text-white/70'
+            }`}>
+              {designMode === 'boxy' ? (
+                <>8 AI PERSPECTIVES ANALYZE YOUR DECISION — <span className="text-white">INSTANTLY</span></>
+              ) : (
+                <>8 AI perspectives analyze your decision. <span className="text-white font-semibold">Instantly.</span></>
+              )}
             </p>
           </div>
 
           {/* Error Banner */}
           {error && (
-            <div className="mb-6 p-4 bg-red-950/50 border-2 border-red-500/50 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className={`mb-6 p-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 ${
+              designMode === 'boxy'
+                ? 'bg-red-950/50 border-2 border-red-500/50'
+                : 'bg-red-500/10 backdrop-blur-xl border border-red-500/30 rounded-xl'
+            }`}>
               <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-              <p className="text-red-400 text-sm font-mono">[ERROR] {error}</p>
+              <p className={`text-red-400 text-sm ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                {designMode === 'boxy' ? `[ERROR] ${error}` : error}
+              </p>
             </div>
           )}
 
-          {/* Input Card - Digital/Blocky style */}
+          {/* Input Card */}
           <div
             className={`
               p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300
-              bg-[#111] border-2 border-white/30
               transition-all duration-200
-              ${isFocused
-                ? 'border-white/60 shadow-[0_0_40px_rgba(255,255,255,0.1)]'
-                : ''
+              ${designMode === 'boxy'
+                ? `bg-[#111] border-2 border-white/30 ${isFocused ? 'border-white/60 shadow-[0_0_40px_rgba(255,255,255,0.1)]' : ''}`
+                : `backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl ${isFocused ? 'border-white/30 shadow-[0_0_30px_rgba(255,255,255,0.1)]' : ''}`
               }
             `}
           >
@@ -135,23 +179,29 @@ function HomePage() {
                   onBlur={() => setIsFocused(false)}
                   placeholder={!isReady ? "Connecting..." : isStreaming ? "Agent is responding..." : "What decision do you need help with?"}
                   disabled={!isReady || isStreaming}
-                  className="
-                    flex-1 bg-transparent text-white placeholder-white/30
-                    outline-none text-base tracking-wide
-                    font-mono py-2
+                  className={`
+                    flex-1 bg-transparent text-white outline-none text-base py-2
                     disabled:opacity-60
-                  "
+                    ${designMode === 'boxy'
+                      ? 'placeholder-white/30 tracking-wide font-mono'
+                      : 'placeholder-white/40 font-sans'
+                    }
+                  `}
                 />
               </div>
               
               {/* Bottom bar with icons and submit */}
-              <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-white/10">
+              <div className={`flex items-center justify-between mt-3 pt-3 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/10'}`}>
                 {/* Left side - attach button and model selector */}
                 <div className="flex items-center gap-2">
                   {/* Attach button */}
                   <button
                     type="button"
-                    className="w-8 h-8 flex items-center justify-center border border-white/20 text-white/50 hover:text-white hover:border-white/50 hover:bg-white/10 transition-all duration-200"
+                    className={`w-8 h-8 flex items-center justify-center border text-white/50 hover:text-white transition-all duration-200 ${
+                      designMode === 'boxy'
+                        ? 'border-white/20 hover:border-white/50 hover:bg-white/10'
+                        : 'border-white/10 hover:border-white/30 hover:bg-white/5 rounded-lg'
+                    }`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -163,6 +213,7 @@ function HomePage() {
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}
                     disabled={isStreaming}
+                    designMode={designMode}
                   />
                 </div>
                 
@@ -185,9 +236,11 @@ function HomePage() {
                           <div
                             className={`
                               w-7 h-7 overflow-hidden
-                              border border-white/30
                               transition-all duration-200 cursor-pointer
-                              ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}
+                              ${designMode === 'boxy'
+                                ? `border border-white/30 ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}`
+                                : `border-2 border-black/50 rounded-full ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}`
+                              }
                             `}
                             style={{ backgroundColor: color }}
                           >
@@ -195,14 +248,15 @@ function HomePage() {
                           </div>
                           
                           {/* Tooltip */}
-                          <div 
-                            className="
+                          <div
+                            className={`
                               absolute -top-8 left-1/2 -translate-x-1/2
-                              px-2 py-1 rounded-lg text-[10px] font-medium
+                              px-2 py-1 text-[10px] font-medium
                               bg-black/80 backdrop-blur-xl border border-white/10 text-white
                               opacity-0 group-hover:opacity-100 transition-opacity
                               whitespace-nowrap pointer-events-none z-20
-                            "
+                              ${designMode === 'round' ? 'rounded-lg' : ''}
+                            `}
                           >
                             {name}
                           </div>
@@ -210,7 +264,9 @@ function HomePage() {
                       )
                     })}
                     {/* +2 more indicator */}
-                    <div className="w-7 h-7 flex items-center justify-center bg-white/10 border border-white/30 text-[10px] text-white font-medium hover:bg-white/20 transition-colors">
+                    <div className={`w-7 h-7 flex items-center justify-center bg-white/10 text-[10px] text-white font-medium hover:bg-white/20 transition-colors ${
+                      designMode === 'boxy' ? 'border border-white/30' : 'border-2 border-black/50 rounded-full'
+                    }`}>
                       +2
                     </div>
                   </button>
@@ -224,8 +280,8 @@ function HomePage() {
                       w-8 h-8
                       transition-all duration-200
                       ${inputValue.trim() && isReady && !isStreaming
-                        ? 'bg-white text-black hover:bg-white/90'
-                        : 'bg-white/10 text-white/30 cursor-not-allowed border border-white/20'
+                        ? `bg-white text-black hover:bg-white/90 ${designMode === 'round' ? 'rounded-lg' : ''}`
+                        : `bg-white/10 text-white/30 cursor-not-allowed border ${designMode === 'round' ? 'rounded-lg border-white/10' : 'border-white/20'}`
                       }
                     `}
                   >
@@ -253,12 +309,13 @@ function HomePage() {
                   key={prompt}
                   type="button"
                   onClick={() => setInputValue(prompt)}
-                  className="
-                    px-4 py-2 text-sm font-mono tracking-wide
-                    bg-[#111] border border-white/20
-                    text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]
-                    transition-all duration-200
-                  "
+                  className={`
+                    px-4 py-2 text-sm transition-all duration-200
+                    ${designMode === 'boxy'
+                      ? 'font-mono tracking-wide bg-[#111] border border-white/20 text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]'
+                      : 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-full text-white/60 hover:text-white hover:border-white/30 hover:bg-white/10'
+                    }
+                  `}
                 >
                   {prompt}
                 </button>
@@ -268,13 +325,19 @@ function HomePage() {
 
           {/* Agent Response */}
           {(currentAgentId || agentText) && (
-            <div className="p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#111] border-2 border-white/30">
+            <div className={`p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 ${
+              designMode === 'boxy'
+                ? 'bg-[#111] border-2 border-white/30'
+                : 'backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl'
+            }`}>
               {/* Agent header */}
               <div className="flex items-center gap-3 mb-4">
                 <button
                   type="button"
                   onClick={() => setIsAgentsPanelOpen(true)}
-                  className="w-10 h-10 overflow-hidden border-2 hover:scale-105 transition-transform cursor-pointer"
+                  className={`w-10 h-10 overflow-hidden border-2 hover:scale-105 transition-transform cursor-pointer ${
+                    designMode === 'round' ? 'rounded-full' : ''
+                  }`}
                   style={{ backgroundColor: agentColor, borderColor: agentColor }}
                 >
                   {currentAgentId && (
@@ -287,14 +350,14 @@ function HomePage() {
                 </button>
                 <div className="flex flex-col">
                   <span
-                    className="font-mono text-sm uppercase tracking-widest"
+                    className={`${designMode === 'boxy' ? 'font-mono uppercase tracking-widest' : 'font-semibold uppercase tracking-wider'} text-sm`}
                     style={{ color: agentColor }}
                   >
                     {agentName}
                   </span>
                   {isStreaming && (
-                    <span className="text-white/50 text-xs font-mono animate-pulse">
-                      TYPING...
+                    <span className={`text-white/50 text-xs animate-pulse ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                      {designMode === 'boxy' ? 'TYPING...' : 'typing...'}
                     </span>
                   )}
                 </div>
@@ -302,7 +365,7 @@ function HomePage() {
 
               {/* Response container */}
               <div className="max-h-[300px] overflow-y-auto pr-2">
-                <p className="text-white leading-relaxed whitespace-pre-wrap font-mono text-sm">
+                <p className={`text-white leading-relaxed whitespace-pre-wrap text-sm ${designMode === 'boxy' ? 'font-mono' : ''}`}>
                   {agentText}
                   {isStreaming && (
                     <span className="inline-block w-2 h-4 bg-white ml-1 animate-pulse" />
@@ -312,10 +375,10 @@ function HomePage() {
 
               {/* Token count */}
               {agentText.length > 0 && (
-                <div className="flex justify-end pt-2 border-t-2 border-white/10">
-                  <span className="text-white/50 text-xs font-mono">
-                    {agentText.length} chars
-                    {isStreaming && ' [streaming]'}
+                <div className={`flex justify-end pt-2 ${designMode === 'boxy' ? 'border-t-2 border-white/10' : 'border-t border-white/10'}`}>
+                  <span className={`text-white/50 text-xs ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                    {agentText.length} {designMode === 'boxy' ? 'chars' : 'characters'}
+                    {isStreaming && (designMode === 'boxy' ? ' [streaming]' : ' • streaming')}
                   </span>
                 </div>
               )}
@@ -346,6 +409,7 @@ function HomePage() {
         isOpen={isAgentsPanelOpen}
         onClose={() => setIsAgentsPanelOpen(false)}
         activeAgentId={currentAgentId}
+        designMode={designMode}
       />
     </div>
   )
