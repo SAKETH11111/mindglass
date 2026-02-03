@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import type { Node } from '@xyflow/react';
-import { useDebateStore } from './useDebateStore';
+import { useDebateStore } from '@/hooks/useDebateStore';
 import {
     toReactFlowNode,
     toReactFlowEdge,

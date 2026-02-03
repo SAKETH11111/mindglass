@@ -1,19 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 // DiceBear Notionists avatar URL generator
-const getAvatarUrl = (agentId: AgentId) => 
+const getAvatarUrl = (agentId: AgentId) =>
   `https://api.dicebear.com/7.x/notionists/svg?seed=${agentId}&backgroundColor=transparent`;
 
 // Format tokens per second for display
-const formatTokPerSec = (tokenCount: number, elapsedMs: number): string => {
-  if (elapsedMs <= 0 || tokenCount <= 0) return '--';
-  const tokPerSec = (tokenCount / elapsedMs) * 1000;
-  if (tokPerSec >= 1000) return `${(tokPerSec / 1000).toFixed(1)}k`;
-  return tokPerSec.toFixed(0);
+const formatTokPerSec = (tokensPerSecond: number): string => {
+  if (tokensPerSecond <= 0) return '--';
+  if (tokensPerSecond >= 1000) return `${(tokensPerSecond / 1000).toFixed(1)}k`;
+  return tokensPerSecond.toFixed(0);
 };
 
 // Parse <think>...</think> tags from response
@@ -33,11 +33,93 @@ const parseThinkTags = (text: string): { thinking: string; answer: string; isThi
   return { thinking: '', answer: text, isThinkingInProgress: false };
 };
 
+// Parse citations like [1], [2], [3] from synthesizer text
+const parseCitations = (text: string): { cleanText: string; citations: Map<number, string> } => {
+  const citations = new Map<number, string>();
+
+  // Agent mapping for citations
+  const agentMap: Record<number, { name: string; agentId: AgentId }> = {
+    1: { name: 'Analyst', agentId: 'analyst' },
+    2: { name: 'Optimist', agentId: 'optimist' },
+    3: { name: 'Pessimist', agentId: 'pessimist' },
+    4: { name: 'Critic', agentId: 'critic' },
+    5: { name: 'Strategist', agentId: 'strategist' },
+    6: { name: 'Finance', agentId: 'finance' },
+    7: { name: 'Risk', agentId: 'risk' },
+  };
+
+  // Find all citations in the text
+  const citationRegex = /\[(\d+)\]/g;
+  let match;
+  while ((match = citationRegex.exec(text)) !== null) {
+    const num = parseInt(match[1], 10);
+    if (agentMap[num] && !citations.has(num)) {
+      citations.set(num, agentMap[num].name);
+    }
+  }
+
+  return { cleanText: text, citations };
+};
+
+// Citation badge component
+const CitationBadge = ({ num, agentId, designMode }: { num: number; agentId: AgentId; designMode: 'boxy' | 'round' }) => (
+  <span
+    className={`inline-flex items-center justify-center mx-0.5 text-[10px] font-mono cursor-pointer hover:opacity-80 transition-opacity ${
+      designMode === 'round' ? 'rounded-full' : ''
+    }`}
+    style={{
+      backgroundColor: `${AGENT_COLORS[agentId]}40`,
+      color: AGENT_COLORS[agentId],
+      padding: '0 4px',
+      minWidth: '16px',
+      height: '16px'
+    }}
+    title={`${AGENT_NAMES[agentId]}`}
+  >
+    {num}
+  </span>
+);
+
+// Render text with clickable citations
+const renderTextWithCitations = (text: string, designMode: 'boxy' | 'round', onCitationClick?: (agentId: AgentId) => void) => {
+  const agentMap: Record<number, AgentId> = {
+    1: 'analyst',
+    2: 'optimist',
+    3: 'pessimist',
+    4: 'critic',
+    5: 'strategist',
+    6: 'finance',
+    7: 'risk',
+  };
+
+  const parts = text.split(/(\[\d+\])/g);
+
+  return parts.map((part, index) => {
+    const match = part.match(/\[(\d+)\]/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      const agentId = agentMap[num];
+      if (agentId) {
+        return (
+          <span
+            key={index}
+            onClick={() => onCitationClick?.(agentId)}
+            className="cursor-pointer"
+          >
+            <CitationBadge num={num} agentId={agentId} designMode={designMode} />
+          </span>
+        );
+      }
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
 /**
  * DEBATE PAGE - LAYOUT SKELETON
- * 
+ *
  * Three-column layout based on Linear.app / Figma / Perplexity patterns:
- * 
+ *
  * ┌──────────────────────────────────────────────────────────────────┐
  * │  TOP BAR (56px) - Logo, Status, Token Counter                   │
  * ├──────────┬───────────────────────────────────────┬───────────────┤
@@ -69,32 +151,44 @@ export function DebatePage() {
   const navigate = useNavigate();
   const query = searchParams.get('q') || '';
   const modelTier = searchParams.get('model') || 'pro'; // Default to 'pro' if not specified
-  
+
   // Design mode toggle (matches homepage)
   const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy');
-  
+
   // Inspector visibility state
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
-  
+
+  // Inspector expand/collapse state
+  const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
+
   // Collapsible section state - for auto-open/close behavior
   const [isPerspectivesOpen, setIsPerspectivesOpen] = useState(true);
   const [openAgents, setOpenAgents] = useState<Set<AgentId>>(new Set());
-  
+
   // Store state
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const connectionState = useDebateStore((state) => state.connectionState);
   const totalTokens = useDebateStore((state) => state.totalTokens);
-  
+
+  // Constraint input state (PRD: Interrupt & Inject)
+  const [constraintInput, setConstraintInput] = useState('');
+  const [isInjecting, setIsInjecting] = useState(false);
+
   // WebSocket connection
-  const { isReady, startDebateSession } = useWebSocket();
-  
+  const { isReady, startDebateSession, injectConstraint } = useWebSocket();
+
+  // User constraint state from store
+  const addConstraint = useDebateStore((state) => state.addConstraint);
+  const setUserProxyNode = useDebateStore((state) => state.setUserProxyNode);
+  const constraints = useDebateStore((state) => state.constraints);
+
   // Track debate start time for tok/s calculation
   const debateStartTime = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  
+
   // Start debate when connected and query is present
   useEffect(() => {
     if (isReady && query && !isDebating && phase === 'idle') {
@@ -102,22 +196,22 @@ export function DebatePage() {
       startDebateSession(query, modelTier);
     }
   }, [isReady, query, modelTier, isDebating, phase, startDebateSession]);
-  
+
   // Update elapsed time during debate
   useEffect(() => {
     if (!isDebating || !debateStartTime.current) return;
-    
+
     const interval = setInterval(() => {
       setElapsedMs(Date.now() - (debateStartTime.current || Date.now()));
     }, 100);
-    
+
     return () => clearInterval(interval);
   }, [isDebating]);
-  
+
   // Auto-open/close perspectives based on streaming state
   useEffect(() => {
     const perspectiveAgents = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk'] as AgentId[];
-    
+
     // Auto-open agents that are streaming, auto-close when done
     const newOpenAgents = new Set<AgentId>();
     perspectiveAgents.forEach(id => {
@@ -126,7 +220,7 @@ export function DebatePage() {
       }
     });
     setOpenAgents(newOpenAgents);
-    
+
     // Auto-collapse perspectives when synthesizer is complete
     const hasSynthesis = agents.synthesizer.text && !agents.synthesizer.isStreaming;
     if (hasSynthesis) {
@@ -136,13 +230,73 @@ export function DebatePage() {
       setIsPerspectivesOpen(true);
     }
   }, [agents]);
-  
+
   // Handle agent selection (from sidebar or center grid)
   const handleAgentClick = (agentId: AgentId) => {
     setSelectedAgent(agentId);
     setIsInspectorOpen(true);
   };
-  
+
+  // Handle citation click
+  const handleCitationClick = (agentId: AgentId) => {
+    handleAgentClick(agentId);
+  };
+
+  // Handle constraint injection (PRD: Interrupt & Inject)
+  const handleInjectConstraint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('[Inject] Handler called', { input: constraintInput, isReady, isInjecting, isDebating });
+
+    if (!constraintInput.trim()) {
+      console.log('[Inject] Empty input, returning');
+      return;
+    }
+
+    if (!isReady) {
+      console.log('[Inject] WebSocket not ready');
+      return;
+    }
+
+    if (isInjecting) {
+      console.log('[Inject] Already injecting');
+      return;
+    }
+
+    setIsInjecting(true);
+    const constraint = constraintInput.trim();
+    console.log('[Inject] Processing constraint:', constraint);
+
+    try {
+      // ALWAYS add constraint locally for immediate UI feedback
+      console.log('[Inject] Adding constraint to store');
+      addConstraint(constraint);
+
+      // Try to send to backend (may fail if debate complete)
+      console.log('[Inject] Sending to backend...');
+      const success = injectConstraint(constraint);
+      console.log('[Inject] Backend send result:', success);
+
+      // Create UserProxy node for visualization
+      setUserProxyNode({
+        id: `user-${Date.now()}`,
+        text: constraint,
+        timestamp: Date.now(),
+      });
+
+      // Clear input
+      setConstraintInput('');
+
+      // Auto-hide UserProxy node after 5 seconds
+      setTimeout(() => {
+        setUserProxyNode(null);
+      }, 5000);
+    } catch (error) {
+      console.error('[Inject] Failed to inject constraint:', error);
+    } finally {
+      setIsInjecting(false);
+    }
+  };
+
   // Format elapsed time as M:SS
   const formatTime = (ms: number): string => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -150,17 +304,17 @@ export function DebatePage() {
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
-  
+
   // Calculate timeline progress (12 second max)
   const timelineProgress = Math.min((elapsedMs / 12000) * 100, 100);
-  
+
   // If no query, show redirect option
   if (!query) {
     return (
       <div className="h-screen w-screen bg-[#0a0a0a] text-white flex items-center justify-center">
         <div className="text-center space-y-4">
           <p className="text-white/60 font-mono">NO QUESTION PROVIDED</p>
-          <button 
+          <button
             onClick={() => navigate('/')}
             className="px-4 py-2 bg-[#111] border border-white/20 text-white/70 hover:text-white hover:border-white/50 transition-colors font-mono text-sm"
           >
@@ -173,7 +327,7 @@ export function DebatePage() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#0a0a0a] text-white flex flex-col">
-      
+
       {/* ═══════════════════════════════════════════════════════════════
           TOP BAR - Logo, Status, Token Counter
           Height: 56px fixed
@@ -220,7 +374,7 @@ export function DebatePage() {
                 {phase}
               </span>
             )}
-            
+
             {/* Connection Status */}
             <div className="flex items-center gap-2">
               <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} ${
@@ -239,13 +393,13 @@ export function DebatePage() {
           </div>
         </div>
       </header>
-      
+
       {/* ═══════════════════════════════════════════════════════════════
           MAIN CONTENT - Three Column Layout
           Takes remaining height
       ═══════════════════════════════════════════════════════════════ */}
       <div className="flex-1 flex min-h-0">
-        
+
         {/* ─────────────────────────────────────────────────────────────
             LEFT SIDEBAR - Agent Roster + Navigation
             Width: 240px (15-20% on large screens)
@@ -253,7 +407,7 @@ export function DebatePage() {
         <aside className={`w-60 flex-shrink-0 bg-[#0a0a0a] flex flex-col ${designMode === 'boxy' ? 'border-r border-white/[0.08]' : 'border-r border-white/[0.06]'}`}>
           {/* Back Navigation */}
           <div className={`p-3 ${designMode === 'boxy' ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.06]'}`}>
-            <button 
+            <button
               onClick={() => navigate('/')}
               className={`flex items-center gap-2 text-white/40 hover:text-white text-xs uppercase tracking-wider transition-colors px-2 py-2 hover:bg-white/[0.05] w-full ${designMode === 'boxy' ? 'font-mono' : 'rounded-lg'}`}
             >
@@ -263,7 +417,7 @@ export function DebatePage() {
               <span>{designMode === 'boxy' ? 'NEW QUESTION' : 'New Question'}</span>
             </button>
           </div>
-          
+
           {/* Agent Roster */}
           <div className="flex-1 p-3 overflow-y-auto">
             <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-3 px-2 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
@@ -274,12 +428,12 @@ export function DebatePage() {
                 const isSelected = selectedAgent === agentId;
                 const color = AGENT_COLORS[agentId];
                 const agent = agents[agentId];
-                const status = agent.isStreaming 
+                const status = agent.isStreaming
                   ? (designMode === 'boxy' ? 'STREAMING...' : 'Streaming...')
-                  : agent.text 
+                  : agent.text
                     ? (designMode === 'boxy' ? 'COMPLETE' : 'Complete')
                     : (designMode === 'boxy' ? 'WAITING...' : 'Waiting...');
-                
+
                 return (
                   <button
                     key={agentId}
@@ -288,24 +442,24 @@ export function DebatePage() {
                       w-full flex items-center gap-3 px-2 py-2 text-left
                       transition-all duration-150
                       ${designMode === 'round' ? 'rounded-lg' : ''}
-                      ${isSelected 
+                      ${isSelected
                         ? designMode === 'boxy' ? 'bg-white/[0.08]' : 'bg-white/[0.08]'
                         : designMode === 'boxy' ? 'hover:bg-white/[0.04]' : 'hover:bg-white/[0.04]'
                       }
                     `}
                   >
                     {/* Avatar */}
-                    <div 
+                    <div
                       className={`w-7 h-7 flex-shrink-0 overflow-hidden ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                       style={{ backgroundColor: color }}
                     >
-                      <img 
-                        src={getAvatarUrl(agentId)} 
+                      <img
+                        src={getAvatarUrl(agentId)}
                         alt={AGENT_NAMES[agentId]}
                         className="w-full h-full"
                       />
                     </div>
-                    
+
                     {/* Name + Status */}
                     <div className="flex-1 min-w-0">
                       <p className={`text-xs text-white/90 truncate ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
@@ -315,10 +469,23 @@ export function DebatePage() {
                         {status}
                       </p>
                     </div>
-                    
+
+                    {/* Token Rate Badge */}
+                    {agent.tokensPerSecond > 0 && (
+                      <div
+                        className={`text-[9px] px-1.5 py-0.5 font-mono ${designMode === 'round' ? 'rounded' : ''}`}
+                        style={{
+                          backgroundColor: `${color}20`,
+                          color: color
+                        }}
+                      >
+                        {formatTokPerSec(agent.tokensPerSecond)} tok/s
+                      </div>
+                    )}
+
                     {/* Active Indicator */}
                     {agent.isStreaming && (
-                      <div 
+                      <div
                         className={`w-2 h-2 flex-shrink-0 animate-pulse ${designMode === 'round' ? 'rounded-full' : ''}`}
                         style={{ backgroundColor: color }}
                       />
@@ -328,7 +495,7 @@ export function DebatePage() {
               })}
             </div>
           </div>
-          
+
           {/* Bottom Section */}
           <div className={`p-3 ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
             <div className={`flex items-center gap-2 px-2 py-1.5 text-white/25 text-[10px] ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
@@ -348,7 +515,7 @@ export function DebatePage() {
             </div>
           </div>
         </aside>
-        
+
         {/* ─────────────────────────────────────────────────────────────
             CENTER PANEL - Debate Stream
             Width: Flexible (40-50%)
@@ -362,18 +529,18 @@ export function DebatePage() {
               </p>
             </div>
           </div>
-          
+
           {/* Main Content - Perspectives First, Answer Last */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            
+
             {/* ═══ PERSPECTIVES (Auto-open/close based on streaming) ═══ */}
             {(() => {
               const perspectiveAgents = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk'] as AgentId[];
               const anyStreaming = perspectiveAgents.some(id => agents[id].isStreaming);
-              
+
               return (
-                <details 
-                  className="group" 
+                <details
+                  className="group"
                   open={isPerspectivesOpen}
                   onToggle={(e) => setIsPerspectivesOpen((e.target as HTMLDetailsElement).open)}
                 >
@@ -382,7 +549,7 @@ export function DebatePage() {
                     ${designMode === 'boxy' ? 'font-mono uppercase text-[10px] tracking-widest' : 'text-xs'}
                     text-white/40 hover:text-white/60 transition-colors
                   `}>
-                    <svg 
+                    <svg
                       className={`w-3 h-3 transition-transform ${isPerspectivesOpen ? 'rotate-90' : ''}`}
                       fill="none" stroke="currentColor" viewBox="0 0 24 24"
                     >
@@ -396,21 +563,21 @@ export function DebatePage() {
                       <div className={`w-1.5 h-1.5 ml-1 ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
                     )}
                   </summary>
-                  
+
                   <div className="mt-3 space-y-2">
                     {perspectiveAgents.map((agentId) => {
                       const color = AGENT_COLORS[agentId];
                       const agent = agents[agentId];
                       const { thinking, answer: cleanAnswer, isThinkingInProgress } = parseThinkTags(agent.text);
-                      
+
                       // Use controlled state for open/close
                       const isOpen = openAgents.has(agentId);
-                      
+
                       if (!agent.text && !agent.isStreaming) return null;
-                      
+
                       return (
-                        <details 
-                          key={agentId} 
+                        <details
+                          key={agentId}
                           open={isOpen}
                           onToggle={(e) => {
                             const newOpen = (e.target as HTMLDetailsElement).open;
@@ -425,12 +592,12 @@ export function DebatePage() {
                           <summary className={`
                             flex items-center gap-2.5 p-3 cursor-pointer list-none
                             transition-all duration-150
-                            ${designMode === 'boxy' 
+                            ${designMode === 'boxy'
                               ? `bg-[#0f0f0f] border ${agent.isStreaming ? 'border-emerald-500/50' : 'border-white/[0.08]'} hover:border-white/20`
                               : `bg-white/[0.03] border ${agent.isStreaming ? 'border-emerald-500/30' : 'border-white/[0.06]'} hover:border-white/[0.12] rounded-lg`
                             }
                           `}>
-                            <div 
+                            <div
                               className={`w-5 h-5 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                               style={{ backgroundColor: color }}
                             >
@@ -439,20 +606,34 @@ export function DebatePage() {
                             <span className={`text-xs text-white/60 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : 'font-medium'}`}>
                               {AGENT_NAMES[agentId]}
                             </span>
+
+                            {/* Token Rate Badge */}
+                            {agent.tokensPerSecond > 0 && (
+                              <div
+                                className={`text-[9px] px-1.5 py-0.5 font-mono ${designMode === 'round' ? 'rounded' : ''}`}
+                                style={{
+                                  backgroundColor: `${color}20`,
+                                  color: color
+                                }}
+                              >
+                                {formatTokPerSec(agent.tokensPerSecond)} tok/s
+                              </div>
+                            )}
+
                             {agent.isStreaming && (
                               <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
                             )}
-                            <svg 
+                            <svg
                               className={`w-3 h-3 ml-auto text-white/30 transition-transform ${isOpen ? 'rotate-90' : ''}`}
                               fill="none" stroke="currentColor" viewBox="0 0 24 24"
                             >
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
                           </summary>
-                          
+
                           <div className={`
                             mt-1 p-4 space-y-3
-                            ${designMode === 'boxy' 
+                            ${designMode === 'boxy'
                               ? 'bg-[#0a0a0a] border-x border-b border-white/[0.08]'
                               : 'bg-white/[0.02] border-x border-b border-white/[0.06] rounded-b-lg'
                             }
@@ -471,7 +652,7 @@ export function DebatePage() {
                                 </summary>
                                 <div className={`
                                   mt-2 p-3 text-[11px] leading-[1.5] text-white/30 italic
-                                  ${designMode === 'boxy' 
+                                  ${designMode === 'boxy'
                                     ? 'bg-[#080808] border border-white/[0.04] font-mono text-[10px]'
                                     : 'bg-white/[0.01] border border-white/[0.04] rounded'
                                   }
@@ -480,7 +661,7 @@ export function DebatePage() {
                                 </div>
                               </details>
                             )}
-                            
+
                             {/* Clean answer - show thinking content if still in progress */}
                             <div className={`text-[13px] leading-[1.6] text-white/50 ${designMode === 'boxy' ? 'font-mono text-[12px]' : ''}`}>
                               {cleanAnswer || (isThinkingInProgress ? thinking : (agent.isStreaming ? '' : ''))}
@@ -502,18 +683,21 @@ export function DebatePage() {
               const isLoading = !agent.text && !agent.isStreaming && AGENT_IDS.slice(0, 7).some(id => agents[id].isStreaming || agents[id].text);
               const isStreaming = agent.isStreaming;
               const hasAnswer = cleanAnswer.length > 0;
-              
+
+              // Parse citations from the answer
+              const { citations } = parseCitations(cleanAnswer);
+
               return (
                 <div className={`
                   p-6 transition-all duration-300
-                  ${designMode === 'boxy' 
+                  ${designMode === 'boxy'
                     ? 'bg-gradient-to-b from-[#1a1612] to-[#0f0f0f] border-2 border-[#F15A29]/40'
                     : 'bg-gradient-to-b from-[#F15A29]/10 to-transparent backdrop-blur-xl border-2 border-[#F15A29]/30 rounded-2xl'
                   }
                 `}>
                   {/* Header */}
                   <div className="flex items-center gap-3 mb-4">
-                    <div 
+                    <div
                       className={`w-10 h-10 overflow-hidden flex-shrink-0 ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                       style={{ backgroundColor: '#F15A29' }}
                     >
@@ -524,9 +708,9 @@ export function DebatePage() {
                         {designMode === 'boxy' ? 'ANSWER' : 'Answer'}
                       </span>
                       <p className={`text-[11px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
-                        {isLoading 
+                        {isLoading
                           ? (designMode === 'boxy' ? 'GATHERING PERSPECTIVES...' : 'Gathering perspectives...')
-                          : isStreaming 
+                          : isStreaming
                             ? (designMode === 'boxy' ? 'SYNTHESIZING...' : 'Synthesizing...')
                             : hasAnswer
                               ? (designMode === 'boxy' ? 'FROM 7 PERSPECTIVES' : 'From 7 perspectives')
@@ -534,11 +718,25 @@ export function DebatePage() {
                         }
                       </p>
                     </div>
-                    {isStreaming && (
+
+                    {/* Token Rate Badge */}
+                    {agent.tokensPerSecond > 0 && (
+                      <div
+                        className={`ml-auto text-[10px] px-2 py-1 font-mono ${designMode === 'round' ? 'rounded' : ''}`}
+                        style={{
+                          backgroundColor: '#F15A2920',
+                          color: '#F15A29'
+                        }}
+                      >
+                        {formatTokPerSec(agent.tokensPerSecond)} tok/s
+                      </div>
+                    )}
+
+                    {isStreaming && !agent.tokensPerSecond && (
                       <div className={`w-2 h-2 ml-auto ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
                     )}
                   </div>
-                  
+
                   {/* Thinking section for synthesizer */}
                   {thinking && (
                     <details className="group/think mb-4" open={isThinkingInProgress}>
@@ -553,7 +751,7 @@ export function DebatePage() {
                       </summary>
                       <div className={`
                         mt-2 p-3 text-[11px] leading-[1.5] text-white/30 italic max-h-[200px] overflow-y-auto
-                        ${designMode === 'boxy' 
+                        ${designMode === 'boxy'
                           ? 'bg-[#0a0a0a] border border-white/[0.06] font-mono text-[10px]'
                           : 'bg-black/20 border border-white/[0.06] rounded-lg'
                         }
@@ -563,51 +761,136 @@ export function DebatePage() {
                       </div>
                     </details>
                   )}
-                  
-                  {/* Clean Answer Text */}
+
+                  {/* Clean Answer Text with Citations */}
                   <div className={`text-[15px] leading-[1.8] ${hasAnswer ? 'text-white/80' : 'text-white/40'} ${designMode === 'boxy' ? 'font-mono text-[14px]' : ''}`}>
-                    {cleanAnswer || (isLoading ? 'Analyzing your question from multiple angles...' : isThinkingInProgress ? '(thinking...)' : isStreaming ? '' : 'Waiting to synthesize...')}
+                    {hasAnswer
+                      ? renderTextWithCitations(cleanAnswer, designMode, handleCitationClick)
+                      : (isLoading ? 'Analyzing your question from multiple angles...' : isThinkingInProgress ? '(thinking...)' : isStreaming ? '' : 'Waiting to synthesize...')
+                    }
                     {isStreaming && cleanAnswer && <span className="animate-pulse">▊</span>}
                   </div>
+
+                  {/* Sources Section - Show when synthesizer is done and has citations */}
+                  {!isStreaming && hasAnswer && citations.size > 0 && (
+                    <div className={`mt-6 pt-4 border-t border-white/[0.08] ${designMode === 'boxy' ? '' : ''}`}>
+                      <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-3 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                        {designMode === 'boxy' ? 'SOURCES' : 'Sources'}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {Array.from(citations.entries()).map(([num, name]) => {
+                          const agentIdMap: Record<number, AgentId> = {
+                            1: 'analyst', 2: 'optimist', 3: 'pessimist', 4: 'critic',
+                            5: 'strategist', 6: 'finance', 7: 'risk'
+                          };
+                          const agentId = agentIdMap[num];
+                          return (
+                            <button
+                              key={num}
+                              onClick={() => handleCitationClick(agentId)}
+                              className={`flex items-center gap-2 px-2 py-1.5 hover:bg-white/[0.05] transition-colors ${designMode === 'round' ? 'rounded-lg' : ''}`}
+                              style={{ backgroundColor: `${AGENT_COLORS[agentId]}15` }}
+                            >
+                              <span
+                                className={`text-[10px] font-mono w-5 h-5 flex items-center justify-center ${designMode === 'round' ? 'rounded-full' : ''}`}
+                                style={{
+                                  backgroundColor: `${AGENT_COLORS[agentId]}40`,
+                                  color: AGENT_COLORS[agentId]
+                                }}
+                              >
+                                {num}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className={`w-4 h-4 overflow-hidden ${designMode === 'boxy' ? '' : 'rounded-full'}`}
+                                  style={{ backgroundColor: AGENT_COLORS[agentId] }}
+                                >
+                                  <img src={getAvatarUrl(agentId)} alt={name} className="w-full h-full" />
+                                </div>
+                                <span className="text-[11px] text-white/60">{name}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
-            
+
           </div>
-          
-          {/* Input Bar */}
+
+          {/* Input Bar - PRD: Interrupt & Inject */}
           <div className={`flex-shrink-0 p-4 ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
-            <div className={`h-11 flex items-center gap-3 px-4 ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08]' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
-              <input 
+            <form onSubmit={handleInjectConstraint} className={`h-11 flex items-center gap-3 px-4 ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08]' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
+              <input
                 type="text"
+                value={constraintInput}
+                onChange={(e) => setConstraintInput(e.target.value)}
                 placeholder={designMode === 'boxy' ? 'ADD A CONSTRAINT...' : 'Add a constraint...'}
-                className={`flex-1 bg-transparent text-white/70 placeholder-white/25 text-sm outline-none ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-xs' : ''}`}
+                disabled={!isReady || isInjecting}
+                className={`flex-1 bg-transparent text-white/70 placeholder-white/25 text-sm outline-none disabled:opacity-50 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-xs' : ''}`}
               />
-              <button className={`w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/60 transition-colors ${designMode === 'round' ? 'rounded' : ''}`}>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
+              <button
+                type="submit"
+                disabled={!constraintInput.trim() || !isReady || isInjecting}
+                className={`w-7 h-7 flex items-center justify-center transition-colors ${designMode === 'round' ? 'rounded' : ''} ${
+                  constraintInput.trim() && isReady && !isInjecting
+                    ? 'text-white/70 hover:text-white hover:bg-white/10'
+                    : 'text-white/30 cursor-not-allowed'
+                }`}
+              >
+                {isInjecting ? (
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white/70 rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                )}
               </button>
+            </form>
+
+            {/* DEBUG: Hardcoded test to verify rendering */}
+            <div className="mt-2 px-3 py-2 bg-red-500/20 border border-red-500/50 text-red-300 text-[10px] font-mono">
+              TEST: Constraints count = {constraints.length}
+            </div>
+
+            {/* Constraints count - always visible for debugging */}
+            <div className="mt-1 text-[9px] text-white/30 font-mono">
+              isReady: {isReady ? 'yes' : 'no'} | isDebating: {isDebating ? 'yes' : 'no'}
+            </div>
+
+            {/* Active Constraints Display - Always render container for debugging */}
+            <div className="mt-3 flex flex-wrap gap-2" style={{ minHeight: constraints.length > 0 ? 'auto' : '0' }}>
+              {constraints.map((constraint, index) => (
+                <div
+                  key={index}
+                  className={`px-3 py-1.5 text-[11px] bg-[#888888]/30 text-white/80 border border-[#888888]/50 ${designMode === 'boxy' ? 'font-mono uppercase' : 'rounded'}`}
+                >
+                  <span className="text-[#888888] mr-1">Constraint:</span> {constraint}
+                </div>
+              ))}
             </div>
           </div>
         </main>
-        
+
         {/* ─────────────────────────────────────────────────────────────
             RIGHT SIDEBAR - Inspector Panel
             Width: 360px (30-40% when visible)
             Hidden by default, slides in on selection
         ───────────────────────────────────────────────────────────── */}
         {isInspectorOpen && selectedAgent && (
-          <aside className={`w-[360px] flex-shrink-0 bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-200 ${designMode === 'boxy' ? 'border-l border-white/[0.08]' : 'border-l border-white/[0.06]'}`}>
+          <aside className={`${isInspectorExpanded ? 'w-[600px]' : 'w-[360px]'} flex-shrink-0 bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-200 transition-all ${designMode === 'boxy' ? 'border-l border-white/[0.08]' : 'border-l border-white/[0.06]'}`}>
             {/* Inspector Header */}
             <div className={`h-14 flex-shrink-0 px-4 flex items-center justify-between ${designMode === 'boxy' ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.06]'}`}>
               <div className="flex items-center gap-3">
-                <div 
+                <div
                   className={`w-8 h-8 overflow-hidden ${designMode === 'boxy' ? '' : 'rounded-full'}`}
                   style={{ backgroundColor: AGENT_COLORS[selectedAgent] }}
                 >
-                  <img 
-                    src={getAvatarUrl(selectedAgent)} 
+                  <img
+                    src={getAvatarUrl(selectedAgent)}
                     alt={AGENT_NAMES[selectedAgent]}
                     className="w-full h-full"
                   />
@@ -617,65 +900,70 @@ export function DebatePage() {
                   <p className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>{designMode === 'boxy' ? 'INSPECTOR' : 'Inspector'}</p>
                 </div>
               </div>
-              <button 
-                onClick={() => {
-                  setIsInspectorOpen(false);
-                  setSelectedAgent(null);
-                }}
-                className={`text-white/30 hover:text-white/60 p-1.5 transition-colors ${designMode === 'round' ? 'rounded' : ''}`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Expand/Collapse button */}
+                <button
+                  onClick={() => setIsInspectorExpanded(!isInspectorExpanded)}
+                  className={`text-white/30 hover:text-white/60 p-1.5 transition-colors ${designMode === 'round' ? 'rounded' : ''}`}
+                  title={isInspectorExpanded ? 'Collapse' : 'Expand'}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {isInspectorExpanded ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                    )}
+                  </svg>
+                </button>
+
+                {/* Close button */}
+                <button
+                  onClick={() => {
+                    setIsInspectorOpen(false);
+                    setSelectedAgent(null);
+                  }}
+                  className={`text-white/30 hover:text-white/60 p-1.5 transition-colors ${designMode === 'round' ? 'rounded' : ''}`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-            
-            {/* Inspector Content */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-4">
-                {/* Full Response */}
-                <div>
-                  <p className={`text-[10px] uppercase tracking-widest text-white/25 mb-2.5 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'RESPONSE' : 'Response'}</p>
-                  <div className={`p-4 text-[13px] text-white/50 leading-relaxed min-h-[160px] max-h-[300px] overflow-y-auto ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08] font-mono text-xs' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
-                    {agents[selectedAgent].text || 'Waiting for response...'}
+
+            {/* Inspector Content - Full Response Only */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-6 text-[14px] text-white/80 leading-[1.7] prose prose-invert prose-sm max-w-none">
+                {agents[selectedAgent].text ? (
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
+                      h1: ({ children }) => <h1 className="text-xl font-bold mb-4 text-white/90">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-lg font-semibold mb-3 text-white/85">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-base font-medium mb-2 text-white/80">{children}</h3>,
+                      ul: ({ children }) => <ul className="list-disc pl-5 mb-4 space-y-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-4 space-y-1">{children}</ol>,
+                      li: ({ children }) => <li className="text-white/70">{children}</li>,
+                      code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[12px] font-mono text-white/80">{children}</code>,
+                      pre: ({ children }) => <pre className="bg-white/5 p-4 rounded-lg overflow-x-auto mb-4">{children}</pre>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-white/20 pl-4 italic text-white/50 mb-4">{children}</blockquote>,
+                      strong: ({ children }) => <strong className="text-white/95 font-semibold">{children}</strong>,
+                      em: ({ children }) => <em className="text-white/75 italic">{children}</em>,
+                    }}
+                  >
+                    {agents[selectedAgent].text.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*/g, '')}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-white/30 italic">
+                    Waiting for response...
                   </div>
-                </div>
-                
-                {/* Metadata */}
-                <div>
-                  <p className={`text-[10px] uppercase tracking-widest text-white/25 mb-2.5 ${designMode === 'boxy' ? 'font-mono' : ''}`}>{designMode === 'boxy' ? 'METADATA' : 'Metadata'}</p>
-                  <div className={`p-3 space-y-2.5 text-[11px] ${designMode === 'boxy' ? 'bg-[#0f0f0f] border border-white/[0.08] font-mono text-[10px]' : 'bg-white/[0.03] border border-white/[0.06] rounded-lg'}`}>
-                    <div className="flex justify-between">
-                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Tokens' : 'Tokens'}</span>
-                      <span className="text-white/60">{agents[selectedAgent].tokenCount}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Tok/s' : 'Tok/s'}</span>
-                      <span className="text-white/60">{formatTokPerSec(agents[selectedAgent].tokenCount, elapsedMs)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Status' : 'Status'}</span>
-                      <span className="text-white/60">
-                        {agents[selectedAgent].isStreaming 
-                          ? (designMode === 'boxy' ? 'STREAMING' : 'Streaming')
-                          : agents[selectedAgent].text
-                            ? (designMode === 'boxy' ? 'COMPLETE' : 'Complete')
-                            : (designMode === 'boxy' ? 'WAITING' : 'Waiting')
-                        }
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className={`text-white/40 ${designMode === 'boxy' ? 'uppercase' : ''}`}>{designMode === 'boxy' ? 'Phase' : 'Phase'}</span>
-                      <span className="text-white/60">{agents[selectedAgent].phase || phase}</span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </aside>
         )}
       </div>
-      
+
       {/* ═══════════════════════════════════════════════════════════════
           BOTTOM BAR - Timeline + Cerebras Branding
           Height: 48px fixed
@@ -685,14 +973,14 @@ export function DebatePage() {
         <div className="flex-1 flex items-center gap-3 max-w-xl">
           <span className={`text-[10px] text-white/25 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>{formatTime(elapsedMs)}</span>
           <div className={`flex-1 h-1 bg-white/[0.06] relative ${designMode === 'round' ? 'rounded-full' : ''}`}>
-            <div 
-              className={`absolute left-0 top-0 h-full bg-white/30 transition-all duration-100 ${designMode === 'round' ? 'rounded-full' : ''}`} 
+            <div
+              className={`absolute left-0 top-0 h-full bg-white/30 transition-all duration-100 ${designMode === 'round' ? 'rounded-full' : ''}`}
               style={{ width: `${timelineProgress}%` }}
             />
           </div>
           <span className={`text-[10px] text-white/25 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>0:12</span>
         </div>
-        
+
         {/* Cerebras Branding + Metrics */}
         <div className="flex items-center gap-4 ml-8">
           {totalTokens > 0 && (
@@ -712,7 +1000,7 @@ export function DebatePage() {
           </div>
         </div>
       </footer>
-      
+
     </div>
   );
 }

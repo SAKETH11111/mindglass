@@ -95,8 +95,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 constraint = message.get("constraint", "").strip()
                 if constraint:
                     print(f"[{datetime.now().isoformat()}] Constraint injected: {constraint}")
-                    # Store constraint in orchestrator's blackboard for next agent context
-                    orchestrator.blackboard["_user_constraint"] = f"USER CONSTRAINT: {constraint}"
+                    # Store constraint in orchestrator's user_constraints list
+                    orchestrator.inject_constraint(constraint)
                     # Acknowledge the constraint injection
                     await websocket.send_json({
                         "type": "constraint_acknowledged",

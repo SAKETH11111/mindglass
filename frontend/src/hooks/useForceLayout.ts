@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import { useDebateStore } from './useDebateStore';
+import { useDebateStore } from '@/hooks/useDebateStore';
 
 interface SimulationNode extends d3.SimulationNodeDatum {
     id: string;

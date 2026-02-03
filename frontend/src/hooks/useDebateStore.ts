@@ -41,10 +41,17 @@ interface DebateState {
   edges: GraphEdge[];
   selectedNodeId: string | null;
 
+  // User constraints (PRD: Interrupt & Inject)
+  constraints: string[];
+
+  // UserProxy node for visualization
+  userProxyNode: { id: string; text: string; timestamp: number } | null;
+
   // Actions
   setConnectionState: (state: ConnectionState) => void;
   startDebate: (query: string) => void;
   appendToken: (agentId: AgentId, content: string) => void;
+  setAgentMetrics: (agentId: AgentId, tokensPerSecond: number, totalTokens: number) => void;
   setPhase: (phase: Phase, activeAgents: AgentId[]) => void;
   setAgentDone: (agentId: AgentId) => void;
   setAgentError: (agentId: AgentId, error: string) => void;
@@ -64,6 +71,11 @@ interface DebateState {
   removeEdge: (edgeId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
   clearGraph: () => void;
+
+  // User constraint actions (PRD: Interrupt & Inject)
+  addConstraint: (constraint: string) => void;
+  setUserProxyNode: (node: { id: string; text: string; timestamp: number } | null) => void;
+  clearConstraints: () => void;
 }
 
 const createInitialAgents = (): Record<AgentId, AgentState> => {
@@ -102,6 +114,9 @@ const initialState = {
   nodes: [] as GraphNode[],
   edges: [] as GraphEdge[],
   selectedNodeId: null as string | null,
+  // User constraints (PRD: Interrupt & Inject)
+  constraints: [] as string[],
+  userProxyNode: null as { id: string; text: string; timestamp: number } | null,
 };
 
 export const useDebateStore = create<DebateState>()(
@@ -122,21 +137,23 @@ export const useDebateStore = create<DebateState>()(
         nodes: [],
         edges: [],
         selectedNodeId: null,
+        constraints: [],
+        userProxyNode: null,
       }),
 
     appendToken: (agentId, content) =>
       set((state) => {
         const agent = state.agents[agentId];
         const now = Date.now();
-        
+
         // Initialize streamStartTime if this is the first token
         const streamStartTime = agent.streamStartTime || now;
         const newTokenCount = agent.tokenCount + 1;
-        
+
         // Calculate tokens per second
         const elapsedSeconds = (now - streamStartTime) / 1000;
         const tokensPerSecond = elapsedSeconds > 0 ? Math.round(newTokenCount / elapsedSeconds) : 0;
-        
+
         return {
           agents: {
             ...state.agents,
@@ -151,6 +168,18 @@ export const useDebateStore = create<DebateState>()(
           },
         };
       }),
+
+    setAgentMetrics: (agentId, tokensPerSecond, totalTokens) =>
+      set((state) => ({
+        agents: {
+          ...state.agents,
+          [agentId]: {
+            ...state.agents[agentId],
+            tokensPerSecond,
+            tokenCount: totalTokens,
+          },
+        },
+      })),
 
     setPhase: (phase, activeAgents) =>
       set((state) => {
@@ -277,5 +306,15 @@ export const useDebateStore = create<DebateState>()(
         edges: [],
         selectedNodeId: null,
       }),
+
+    // User constraint actions (PRD: Interrupt & Inject)
+    addConstraint: (constraint: string) =>
+      set((state) => ({
+        constraints: [...state.constraints, constraint],
+      })),
+
+    setUserProxyNode: (node) => set({ userProxyNode: node }),
+
+    clearConstraints: () => set({ constraints: [], userProxyNode: null }),
   }))
 );

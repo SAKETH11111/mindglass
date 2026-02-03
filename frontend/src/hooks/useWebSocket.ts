@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { useDebateStore } from './useDebateStore';
+import { useDebateStore } from '@/hooks/useDebateStore';
 import type { WebSocketMessage } from '@/types';
 
 const WS_URL = 'ws://localhost:8000/ws/debate';
@@ -15,6 +15,7 @@ export function useWebSocket() {
   const {
     setConnectionState,
     appendToken,
+    setAgentMetrics,
     setPhase,
     setAgentDone,
     setAgentError,
@@ -22,6 +23,7 @@ export function useWebSocket() {
     endDebate,
     setError,
     startDebate,
+    addConstraint,
   } = useDebateStore();
 
   const connect = useCallback(() => {
@@ -67,6 +69,11 @@ export function useWebSocket() {
           switch (data.type) {
             case 'agent_token': {
               appendToken(data.agentId, data.content);
+              break;
+            }
+
+            case 'agent_metrics': {
+              setAgentMetrics(data.agentId, data.tokensPerSecond, data.totalTokens);
               break;
             }
 
@@ -117,6 +124,12 @@ export function useWebSocket() {
               break;
             }
 
+            case 'constraint_acknowledged': {
+              console.log('Constraint acknowledged:', data.constraint);
+              addConstraint(data.constraint);
+              break;
+            }
+
             default: {
               console.warn('Unknown message type:', data);
             }
@@ -129,7 +142,7 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket:', err);
       setError('Failed to connect to server');
     }
-  }, [setConnectionState, appendToken, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError]);
+  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError, addConstraint]);
 
   useEffect(() => {
     connect();
@@ -172,7 +185,7 @@ export function useWebSocket() {
   }, [sendMessage, startDebate]);
 
   // Inject a constraint mid-debate (PRD: Interrupt & Inject feature)
-  const injectConstraint = useCallback((constraint: string) => {
+  const injectConstraint = useCallback((constraint: string): boolean => {
     console.log('Injecting constraint:', constraint);
     return sendMessage({ type: 'inject_constraint', constraint });
   }, [sendMessage]);

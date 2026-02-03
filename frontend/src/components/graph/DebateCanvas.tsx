@@ -46,6 +46,7 @@ const edgeTypes: EdgeTypes = {
 
 interface DebateCanvasProps {
   onNodeSelect?: (nodeId: string | null) => void;
+  designMode?: 'boxy' | 'round';
 }
 
 // Card dimensions
@@ -117,7 +118,7 @@ const getDebatePosition = (
   return { x: centerX, y: 300 };
 };
 
-export function DebateCanvas({ onNodeSelect }: DebateCanvasProps) {
+export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvasProps) {
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
   
@@ -148,11 +149,12 @@ export function DebateCanvas({ onNodeSelect }: DebateCanvasProps) {
           isStreaming: agent.isStreaming,
           phase: nodeRound,
           tokensPerSecond: agent.tokensPerSecond,
+          designMode,
         },
         draggable: true,
       };
     });
-  }, [agents]);
+  }, [agents, designMode]);
   
   // Generate edges showing semantic debate relationships (per PRD)
   // - Red "refutes" edges: Challengers attacking openers
@@ -243,7 +245,7 @@ export function DebateCanvas({ onNodeSelect }: DebateCanvasProps) {
     const newEdges = generateEdges();
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [agents, phase, generateNodes, generateEdges, setNodes, setEdges]);
+  }, [agents, phase, designMode, generateNodes, generateEdges, setNodes, setEdges]);
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(({ nodes: selectedNodes }) => {
     if (selectedNodes.length > 0) {

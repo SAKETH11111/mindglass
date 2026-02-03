@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import { useDebateStore } from './useDebateStore';
+import { useDebateStore } from '@/hooks/useDebateStore';
 
 interface SimulationConfig {
   width: number;

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useDebateStore } from './useDebateStore';
+import { useDebateStore } from '@/hooks/useDebateStore';
 import { AGENT_COLORS, type AgentId } from '@/types/agent';
 import type { GraphNode } from '@/types/graph';
 

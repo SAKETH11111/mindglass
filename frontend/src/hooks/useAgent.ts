@@ -1,4 +1,4 @@
-import { useDebateStore } from './useDebateStore';
+import { useDebateStore } from '@/hooks/useDebateStore';
 import type { AgentId, AgentState, Phase } from '@/types/agent';
 import { useShallow } from 'zustand/react/shallow';
 

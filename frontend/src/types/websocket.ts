@@ -12,6 +12,16 @@ export interface AgentTokenMessage {
   timestamp: number;
 }
 
+export interface AgentMetricsMessage {
+  type: 'agent_metrics';
+  agentId: AgentId;
+  tokensPerSecond: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  timestamp: number;
+}
+
 export interface AgentDoneMessage {
   type: 'agent_done';
   agentId: AgentId;
@@ -64,8 +74,15 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface ConstraintAcknowledgedMessage {
+  type: 'constraint_acknowledged';
+  constraint: string;
+  timestamp: number;
+}
+
 export type WebSocketMessage =
   | AgentTokenMessage
+  | AgentMetricsMessage
   | AgentDoneMessage
   | AgentErrorMessage
   | PhaseChangeMessage
@@ -73,4 +90,5 @@ export type WebSocketMessage =
   | RoundStartMessage
   | MetricsMessage
   | DebateCompleteMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ConstraintAcknowledgedMessage;

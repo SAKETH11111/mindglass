@@ -23,6 +23,7 @@ export interface AgentThoughtNodeData extends Record<string, unknown> {
   isStreaming: boolean;
   phase: number;
   tokensPerSecond?: number;
+  designMode?: 'boxy' | 'round';
 }
 
 // Parse <think>...</think> tags and return thinking + answer separately
@@ -48,11 +49,11 @@ const parseThinkTags = (input: string): { thinking: string; answer: string; isTh
 };
 
 function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
-  const agentId = data.agentId as AgentId;
-  const text = data.text as string;
-  const isStreaming = data.isStreaming as boolean;
-  const tokensPerSecond = data.tokensPerSecond as number | undefined;
-  
+  const agentId = (data as AgentThoughtNodeData).agentId;
+  const text = (data as AgentThoughtNodeData).text;
+  const isStreaming = (data as AgentThoughtNodeData).isStreaming;
+  const designMode = (data as AgentThoughtNodeData).designMode ?? 'boxy';
+
   const color = AGENT_COLORS[agentId];
   const name = AGENT_NAMES[agentId];
   
@@ -61,7 +62,6 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
   
   // Determine what to display
   const isThinking = thinking && !isThinkingComplete;
-  const hasThinking = thinking.length > 0;
   const hasAnswer = answer.length > 0;
   
   // For display: show thinking while streaming, then show answer
@@ -85,68 +85,61 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
     : displayContent;
 
   return (
-    <div 
+    <div
       className={`
         relative group cursor-pointer
         min-w-[220px] max-w-[280px]
-        bg-[rgba(20,20,20,0.85)] backdrop-blur-xl
-        border-2 rounded-xl
-        shadow-xl shadow-black/30
         transition-all duration-200
-        ${selected ? 'ring-2 ring-white/40 scale-105' : 'hover:scale-[1.02]'}
+        ${designMode === 'boxy'
+          ? `bg-[#111] border-2 ${selected ? 'border-white/50 shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'border-white/20 hover:border-white/40'}`
+          : `bg-[rgba(20,20,20,0.85)] backdrop-blur-xl border-2 rounded-xl shadow-xl shadow-black/30 ${selected ? 'ring-2 ring-white/40 scale-105' : 'hover:scale-[1.02]'}`
+        }
       `}
-      style={{ 
-        borderColor: `${color}80`,
+      style={{
+        borderColor: designMode === 'boxy' ? `${color}80` : undefined,
       }}
     >
       {/* Header */}
-      <div 
-        className="flex items-center gap-2.5 px-3 py-2 border-b border-white/10"
-        style={{ backgroundColor: `${color}15` }}
+      <div
+        className={`flex items-center gap-2.5 px-3 py-2 border-b ${designMode === 'boxy' ? 'border-white/10' : 'border-white/10'}`}
+        style={{ backgroundColor: designMode === 'boxy' ? `${color}15` : `${color}15` }}
       >
-        <div 
-          className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0"
+        <div
+          className={`w-7 h-7 overflow-hidden flex-shrink-0 ${designMode === 'round' ? 'rounded-full' : ''}`}
           style={{ backgroundColor: color }}
         >
-          <img 
-            src={getAvatarUrl(agentId)} 
-            alt={name} 
+          <img
+            src={getAvatarUrl(agentId)}
+            alt={name}
             className="w-full h-full"
             draggable={false}
           />
         </div>
-        <span className="text-xs font-semibold text-white/90 uppercase tracking-wider">
+        <span className={`text-xs font-semibold text-white/90 tracking-wider ${designMode === 'boxy' ? 'font-mono uppercase' : 'uppercase'}`}>
           {name}
         </span>
-        
+
         {/* Status indicators */}
         <div className="ml-auto flex items-center gap-2">
-          {/* Tokens per second */}
-          {isStreaming && tokensPerSecond && tokensPerSecond > 0 && (
-            <span className="text-[9px] font-mono text-white/40">
-              {tokensPerSecond >= 1000 ? `${(tokensPerSecond/1000).toFixed(1)}k` : tokensPerSecond} tok/s
-            </span>
-          )}
-          
           {/* Thinking indicator */}
           {isThinking && (
-            <span className="text-[9px] font-mono text-white/50 flex items-center gap-1">
-              💭 thinking
+            <span className={`text-[9px] text-white/50 flex items-center gap-1 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+              {designMode === 'boxy' ? 'THINKING' : '💭 thinking'}
               <span className="animate-pulse">▊</span>
             </span>
           )}
-          
+
           {/* Streaming answer indicator */}
           {isStreaming && !isThinking && hasAnswer && (
-            <span className="text-[9px] font-mono text-emerald-400/70">
-              streaming
+            <span className={`text-[9px] text-emerald-400/70 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
+              {designMode === 'boxy' ? 'LIVE' : 'streaming'}
             </span>
           )}
-          
+
           {/* Done indicator */}
           {!isStreaming && hasAnswer && (
-            <span className="text-[9px] font-mono text-white/30">
-              ✓ done
+            <span className={`text-[9px] text-white/30 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+              {designMode === 'boxy' ? 'DONE' : '✓ done'}
             </span>
           )}
         </div>

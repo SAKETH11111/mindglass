@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, List, AsyncGenerator
 from datetime import datetime
 import os
 
+
 class BaseAgent(ABC):
     """
     Abstract base class for all agents in the MindGlass system.
@@ -36,6 +37,18 @@ class BaseAgent(ABC):
             "type": "agent_token",
             "agentId": self.agent_id,
             "content": content,
+            "timestamp": int(datetime.now().timestamp() * 1000)
+        }
+
+    def _create_metrics_message(self, tokens_per_second: float, total_tokens: int, prompt_tokens: int = 0, completion_tokens: int = 0) -> Dict[str, Any]:
+        """Create a standardized agent metrics message with token usage."""
+        return {
+            "type": "agent_metrics",
+            "agentId": self.agent_id,
+            "tokensPerSecond": tokens_per_second,
+            "totalTokens": total_tokens,
+            "promptTokens": prompt_tokens,
+            "completionTokens": completion_tokens,
             "timestamp": int(datetime.now().timestamp() * 1000)
         }
 
@@ -101,6 +114,7 @@ class BaseAgent(ABC):
             - timestamp: int (Unix ms)
         """
         pass
+
 
 class LLMAgent(BaseAgent):
     """
