@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { useDebateStore } from './useDebateStore';
 import type {
   AgentTokenMessage,
@@ -6,7 +6,6 @@ import type {
   AgentErrorMessage,
   PhaseChangeMessage,
   MetricsMessage,
-  DebateCompleteMessage,
 } from '@/types/websocket';
 
 describe('WebSocket Integration with Store', () => {
@@ -101,11 +100,6 @@ describe('WebSocket Integration with Store', () => {
     it('should handle debate_complete message', () => {
       useDebateStore.getState().startDebate('Test');
       useDebateStore.getState().setPhase('dispatch', ['analyst']);
-
-      const message: DebateCompleteMessage = {
-        type: 'debate_complete',
-        timestamp: Date.now(),
-      };
 
       // Simulate what useWebSocket does
       useDebateStore.getState().endDebate();

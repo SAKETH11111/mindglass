@@ -3,7 +3,6 @@ import {
   AGENT_IDS,
   AGENT_COLORS,
   AGENT_NAMES,
-  type AgentId,
   type AgentState,
   type Phase,
 } from './agent';

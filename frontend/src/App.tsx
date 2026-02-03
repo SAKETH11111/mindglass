@@ -1,71 +1,36 @@
 import { useState, useCallback } from 'react'
-import { Send, Sparkles, AlertCircle, Loader2 } from 'lucide-react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Send, AlertCircle, Loader2 } from 'lucide-react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDebateStore } from './hooks/useDebateStore'
 import type { StartDebateMessage } from './types/websocket'
-import { AGENT_COLORS, AGENT_NAMES } from './types/agent'
+import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from './types/agent'
 import type { AgentId } from './types/agent'
+import { V1Page } from '@/pages/v1/V1Page'
+import { V2Page } from '@/pages/v2/V2Page'
+import { V3Page } from '@/pages/v3/V3Page'
+import { V4Page } from '@/pages/v4/V4Page'
+import { AgentsPanel } from '@/components/AgentsPanel'
+import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
+import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
 
-// Cerebras Logo Component using official SVG
-function CerebrasLogo({ className = "w-12 h-12" }: { className?: string }) {
-  return (
-    <img
-      src="/cerebras-logo.svg"
-      alt="Cerebras"
-      className={className}
-    />
-  )
+// DiceBear Notionists avatar URLs for each agent
+const AGENT_AVATARS: Record<AgentId, string> = {
+  analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
+  optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
+  pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
+  critic: 'https://api.dicebear.com/7.x/notionists/svg?seed=critic&backgroundColor=transparent',
+  strategist: 'https://api.dicebear.com/7.x/notionists/svg?seed=planner&backgroundColor=transparent',
+  finance: 'https://api.dicebear.com/7.x/notionists/svg?seed=banker&backgroundColor=transparent',
+  risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=guardian&backgroundColor=transparent',
+  synthesizer: 'https://api.dicebear.com/7.x/notionists/svg?seed=wizard&backgroundColor=transparent',
 }
 
-// Animated ring decoration
-function RingDecoration() {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {/* Outer ring */}
-      <div className="absolute -top-40 -right-40 w-80 h-80 opacity-10">
-        <svg viewBox="0 0 100 100" className="w-full h-full animate-spin" style={{ animationDuration: '60s' }}>
-          <circle cx="50" cy="50" r="48" stroke="#F15A29" strokeWidth="0.5" fill="none" strokeDasharray="4 4" />
-        </svg>
-      </div>
-      {/* Middle ring */}
-      <div className="absolute -top-32 -right-32 w-64 h-64 opacity-15">
-        <svg viewBox="0 0 100 100" className="w-full h-full animate-spin" style={{ animationDuration: '45s', animationDirection: 'reverse' }}>
-          <circle cx="50" cy="50" r="45" stroke="#F15A29" strokeWidth="0.5" fill="none" strokeDasharray="8 8" />
-        </svg>
-      </div>
-      {/* Inner ring */}
-      <div className="absolute -top-24 -right-24 w-48 h-48 opacity-20">
-        <svg viewBox="0 0 100 100" className="w-full h-full animate-spin" style={{ animationDuration: '30s' }}>
-          <circle cx="50" cy="50" r="40" stroke="#FF985D" strokeWidth="0.5" fill="none" strokeDasharray="12 12" />
-        </svg>
-      </div>
-    </div>
-  )
-}
-
-// Status indicator component
-function StatusIndicator({ status = "ready" }: { status?: "ready" | "thinking" | "streaming" | "connecting" | "error" }) {
-  const statusConfig = {
-    ready: { color: "bg-[#92E849]", text: "Ready", pulse: false },
-    connecting: { color: "bg-[#FF985D]", text: "Connecting", pulse: true },
-    thinking: { color: "bg-[#FF985D]", text: "Thinking", pulse: true },
-    streaming: { color: "bg-[#F15A29]", text: "Streaming", pulse: true },
-    error: { color: "bg-red-500", text: "Error", pulse: false },
-  }
-
-  const config = statusConfig[status]
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-[#262626] border border-[#333333]">
-      <span className={`w-2 h-2 rounded-full ${config.color} ${config.pulse ? 'animate-pulse' : ''}`} />
-      <span className="text-xs font-medium text-[#B0B0B0] uppercase tracking-wider">{config.text}</span>
-    </div>
-  )
-}
-
-function App() {
+function HomePage() {
   const [inputValue, setInputValue] = useState("")
   const [isFocused, setIsFocused] = useState(false)
+  const [isAgentsPanelOpen, setIsAgentsPanelOpen] = useState(false)
+  const [selectedTier, setSelectedTier] = useState<ModelTier>('pro')
 
   const { sendMessage, isReady } = useWebSocket()
   const { agentText, isStreaming, currentAgentId, clearResponse, error } = useDebateStore()
@@ -103,146 +68,280 @@ function App() {
   const agentColor = AGENT_COLORS[agentId] || '#4ECDC4'
 
   return (
-    <div className="min-h-screen bg-[#1A1A1A] text-white relative overflow-hidden">
-      {/* Wafer grid background pattern */}
-      <div className="absolute inset-0 wafer-grid opacity-50" />
-
-      {/* Ring decorations */}
-      <RingDecoration />
-
-      {/* Top border line - Cerebras style */}
-      <div className="fixed top-0 left-0 right-0 h-[2px] bg-[#F15A29] z-50" />
+    <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
+      {/* Rainbow Matrix Shader Background */}
+      <RainbowMatrixShader />
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <CerebrasLogo className="w-10 h-10" />
-            <span className="text-sm font-semibold tracking-wider text-[#808080] uppercase hidden sm:block">
-              Cerebras
-            </span>
-          </div>
+      <header className="fixed top-0 left-0 right-0 z-40">
+        {/* Subtle top line accent */}
+        <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        
+        <div className="px-6 py-3">
+          <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+            {/* Left: Logo & Brand */}
+            <div className="flex items-center gap-3 group cursor-default">
+              {/* Logo with subtle glow */}
+              <div className="relative">
+                <div className="absolute inset-0 bg-white/20 rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <img 
+                  src="/cerebras-logo.svg" 
+                  alt="Cerebras" 
+                  className="relative w-7 h-7 transition-transform duration-300 group-hover:scale-105" 
+                />
+              </div>
+              <span className="text-sm font-medium text-white/90 tracking-tight">
+                Cerebras
+              </span>
+            </div>
 
-          <div className="flex items-center gap-4">
-            <a
-              href="https://github.com/cerebras"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#808080] hover:text-white transition-colors"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-              </svg>
-            </a>
+            {/* Right: Status & Actions */}
+            <div className="flex items-center gap-3">
+              {/* Compact Status Pill */}
+              <div className="flex items-center gap-2 h-7 px-3 rounded-full bg-white/[0.03] border border-white/[0.06]">
+                <span className={`
+                  w-1.5 h-1.5 rounded-full
+                  ${getStatus() === 'ready' ? 'bg-emerald-400' : 
+                    getStatus() === 'error' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}
+                `} />
+                <span className="text-[11px] font-medium text-white/50 uppercase tracking-wide">
+                  {getStatus()}
+                </span>
+              </div>
+              
+              {/* Separator */}
+              <div className="w-px h-4 bg-white/[0.06]" />
+              
+              {/* GitHub Link */}
+              <a
+                href="https://github.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center w-7 h-7 rounded-full text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-all duration-200"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                </svg>
+              </a>
+            </div>
           </div>
         </div>
+        
+        {/* Bottom gradient fade */}
+        <div className="h-12 bg-gradient-to-b from-black/20 to-transparent pointer-events-none" />
       </header>
 
       {/* Main content */}
       <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-24">
         <div className="w-full max-w-2xl space-y-8">
-          {/* Logo and Title */}
+          {/* Title */}
           <div className="text-center space-y-4">
-            <div className="flex justify-center">
-              <div className="relative">
-                <CerebrasLogo className="w-20 h-20" />
-                {/* Glow effect behind logo */}
-                <div className="absolute inset-0 blur-3xl bg-[#F15A29] opacity-20 -z-10" />
-              </div>
-            </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
-              <span className="gradient-text">MindGlass</span>
+            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <span 
+                className="text-white drop-shadow-[0_0_60px_rgba(255,255,255,0.3)]"
+              >
+                Prism
+              </span>
             </h1>
-            <p className="text-lg text-[#B0B0B0] max-w-md mx-auto">
-              Multi-Agent Debate Interface powered by{' '}
-              <span className="text-[#F15A29] font-semibold">Cerebras</span>
+            <p className="text-lg text-white/70 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
+              8 AI perspectives analyze your decision.{' '}
+              <span className="text-white font-semibold">Instantly.</span>
             </p>
           </div>
 
           {/* Error Banner */}
           {error && (
-            <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="mb-6 p-4 rounded-xl bg-red-500/10 backdrop-blur-xl border border-red-500/30 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
               <p className="text-red-400 text-sm">{error}</p>
             </div>
           )}
 
-          {/* Input Card - Die-cut tile style */}
-          <div className="die-cut-tile p-1">
+          {/* Input Card - Glassmorphism style */}
+          <div 
+            className={`
+              rounded-2xl p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300
+              backdrop-blur-xl bg-white/5 border border-white/10
+              transition-all duration-200
+              ${isFocused
+                ? 'border-white/30 shadow-[0_0_30px_rgba(255,255,255,0.1)]'
+                : ''
+              }
+            `}
+          >
             <form onSubmit={handleSubmit}>
-              <div
-                className={`
-                  flex items-center gap-3 p-4 rounded
-                  bg-[#1A1A1A] border transition-all duration-200
-                  ${isFocused
-                    ? 'border-[#F15A29] shadow-[0_0_0_1px_rgba(241,90,41,1)]'
-                    : 'border-[#333333] hover:border-[#4D4D4D]'
-                  }
-                `}
-              >
-                {!isReady ? (
-                  <Loader2 className="w-5 h-5 text-[#808080] animate-spin" />
-                ) : (
-                  <Sparkles className={`w-5 h-5 transition-colors ${isFocused ? 'text-[#F15A29]' : 'text-[#808080]'}`} />
-                )}
+              {/* Input row */}
+              <div className="flex items-center gap-3">
                 <input
                   type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
-                  placeholder={!isReady ? "Connecting..." : isStreaming ? "Agent is responding..." : "Enter your question..."}
+                  placeholder={!isReady ? "Connecting..." : isStreaming ? "Agent is responding..." : "What decision do you need help with?"}
                   disabled={!isReady || isStreaming}
                   className="
-                    flex-1 bg-transparent text-white placeholder-[#808080]
+                    flex-1 bg-transparent text-white placeholder-white/40
                     outline-none text-base
-                    font-sans
+                    font-sans py-2
                     disabled:opacity-60
                   "
                 />
-                <button
-                  type="submit"
-                  disabled={!inputValue.trim() || !isReady || isStreaming}
-                  className={`
-                    flex items-center justify-center
-                    w-10 h-10 rounded
-                    transition-all duration-200
-                    ${inputValue.trim() && isReady && !isStreaming
-                      ? 'bg-[#F15A29] text-black hover:bg-[#FF985D] hover:shadow-[0_0_20px_rgba(241,90,41,0.4)]'
-                      : 'bg-[#333333] text-[#808080] cursor-not-allowed'
-                    }
-                  `}
-                >
-                  {isStreaming ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </button>
+              </div>
+              
+              {/* Bottom bar with icons and submit */}
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
+                {/* Left side - attach button and model selector */}
+                <div className="flex items-center gap-2">
+                  {/* Attach button */}
+                  <button
+                    type="button"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 text-white/50 hover:text-white hover:border-white/30 hover:bg-white/5 transition-all duration-200"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                  </button>
+                  
+                  {/* Model Selector */}
+                  <ModelSelector
+                    selectedTier={selectedTier}
+                    onTierChange={setSelectedTier}
+                    disabled={isStreaming}
+                  />
+                </div>
+                
+                {/* Right side - agent avatars and submit */}
+                <div className="flex items-center gap-3">
+                  {/* Agent avatars - clickable to open panel */}
+                  <button
+                    type="button"
+                    onClick={() => setIsAgentsPanelOpen(true)}
+                    className="flex items-center -space-x-1 hover:opacity-90 transition-opacity"
+                  >
+                    {AGENT_IDS.slice(0, 6).map((agent) => {
+                      const avatar = AGENT_AVATARS[agent]
+                      const color = AGENT_COLORS[agent]
+                      const name = AGENT_NAMES[agent]
+                      const isActive = currentAgentId === agent
+                      
+                      return (
+                        <div key={agent} className="group relative">
+                          <div
+                            className={`
+                              w-7 h-7 rounded-full overflow-hidden
+                              border-2 border-black/50
+                              transition-all duration-200 cursor-pointer
+                              ${isActive ? 'ring-2 ring-white z-10 scale-110' : 'hover:z-10 hover:scale-110'}
+                            `}
+                            style={{ backgroundColor: color }}
+                          >
+                            <img src={avatar} alt={name} className="w-full h-full" />
+                          </div>
+                          
+                          {/* Tooltip */}
+                          <div 
+                            className="
+                              absolute -top-8 left-1/2 -translate-x-1/2
+                              px-2 py-1 rounded-lg text-[10px] font-medium
+                              bg-black/80 backdrop-blur-xl border border-white/10 text-white
+                              opacity-0 group-hover:opacity-100 transition-opacity
+                              whitespace-nowrap pointer-events-none z-20
+                            "
+                          >
+                            {name}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {/* +2 more indicator */}
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center bg-white/10 border-2 border-black/50 text-[10px] text-white font-medium hover:bg-white/20 transition-colors">
+                      +2
+                    </div>
+                  </button>
+                  
+                  {/* Submit button */}
+                  <button
+                    type="submit"
+                    disabled={!inputValue.trim() || !isReady || isStreaming}
+                    className={`
+                      flex items-center justify-center
+                      w-8 h-8 rounded-lg
+                      transition-all duration-200
+                      ${inputValue.trim() && isReady && !isStreaming
+                        ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)]'
+                        : 'bg-white/10 text-white/30 cursor-not-allowed'
+                      }
+                    `}
+                  >
+                    {isStreaming ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
 
+          {/* Example prompts */}
+          {!agentText && (
+            <div className="flex flex-wrap justify-center gap-2 animate-in fade-in duration-700 delay-500">
+              {[
+                "Should I take this job offer?",
+                "Is now a good time to buy a house?",
+                "Should my startup pivot?",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => setInputValue(prompt)}
+                  className="
+                    px-4 py-2 rounded-full text-sm
+                    bg-white/5 backdrop-blur-xl border border-white/10
+                    text-white/60 hover:text-white hover:border-white/30 hover:bg-white/10
+                    transition-all duration-200
+                  "
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Agent Response */}
           {(currentAgentId || agentText) && (
-            <div className="die-cut-tile p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="rounded-2xl p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 backdrop-blur-xl bg-white/5 border border-white/10">
               {/* Agent header */}
               <div className="flex items-center gap-3 mb-4">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: agentColor }}
-                />
-                <span
-                  className="font-semibold text-sm uppercase tracking-wider"
-                  style={{ color: agentColor }}
+                <button
+                  type="button"
+                  onClick={() => setIsAgentsPanelOpen(true)}
+                  className="w-10 h-10 rounded-full overflow-hidden border-2 hover:scale-105 transition-transform cursor-pointer"
+                  style={{ backgroundColor: agentColor, borderColor: agentColor }}
                 >
-                  {agentName}
-                </span>
-                {isStreaming && (
-                  <span className="text-[#808080] text-xs animate-pulse">
-                    typing...
+                  {currentAgentId && (
+                    <img 
+                      src={AGENT_AVATARS[currentAgentId]} 
+                      alt={agentName} 
+                      className="w-full h-full" 
+                    />
+                  )}
+                </button>
+                <div className="flex flex-col">
+                  <span
+                    className="font-semibold text-sm uppercase tracking-wider"
+                    style={{ color: agentColor }}
+                  >
+                    {agentName}
                   </span>
-                )}
+                  {isStreaming && (
+                    <span className="text-white/50 text-xs animate-pulse">
+                      typing...
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Response container */}
@@ -250,15 +349,15 @@ function App() {
                 <p className="text-white leading-relaxed whitespace-pre-wrap font-mono text-sm">
                   {agentText}
                   {isStreaming && (
-                    <span className="inline-block w-2 h-4 bg-[#F15A29] ml-1 animate-pulse" />
+                    <span className="inline-block w-2 h-4 bg-white ml-1 animate-pulse" />
                   )}
                 </p>
               </div>
 
               {/* Token count */}
               {agentText.length > 0 && (
-                <div className="flex justify-end pt-2 border-t border-[#333333]">
-                  <span className="text-[#808080] text-xs">
+                <div className="flex justify-end pt-2 border-t border-white/10">
+                  <span className="text-white/50 text-xs">
                     {agentText.length} characters
                     {isStreaming && ' • streaming'}
                   </span>
@@ -267,52 +366,53 @@ function App() {
             </div>
           )}
 
-          {/* Feature pills */}
-          <div className="flex flex-wrap justify-center gap-2">
-            {[
-              { label: "8 Agents", color: "#A876E8" },
-              { label: "Real-time", color: "#92E849" },
-              { label: "Cerebras Inference", color: "#F15A29" },
-            ].map((feature) => (
-              <span
-                key={feature.label}
-                className="px-3 py-1 rounded text-xs font-medium uppercase tracking-wider"
-                style={{
-                  backgroundColor: `${feature.color}15`,
-                  color: feature.color,
-                  border: `1px solid ${feature.color}30`,
-                }}
-              >
-                {feature.label}
-              </span>
-            ))}
-          </div>
         </div>
       </main>
 
-      {/* Footer */}
+      {/* Footer - minimal */}
       <footer className="fixed bottom-0 left-0 right-0 px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-[#808080]">
-            <span className="font-mono">Powered by</span>
-            <span className="text-[#F15A29] font-semibold">Cerebras</span>
+        <div className="max-w-[1600px] mx-auto flex items-center justify-center">
+          <div className="flex items-center gap-2 text-xs text-white/40">
+            <span>Powered by</span>
+            <span className="text-white/70 font-medium">Cerebras</span>
           </div>
-          <StatusIndicator status={getStatus()} />
         </div>
       </footer>
 
-      {/* Corner decorations - Die-cut style */}
-      <div className="fixed bottom-0 left-0 w-[14px] h-[14px] z-50">
-        <div className="absolute w-full h-[7px] overflow-hidden">
-          <div className="rounded-full w-[14px] h-[14px] bg-[#1A1A1A]" />
-        </div>
-      </div>
-      <div className="fixed bottom-0 right-0 w-[14px] h-[14px] z-50">
-        <div className="absolute w-full h-[7px] overflow-hidden right-0">
-          <div className="rounded-full w-[14px] h-[14px] bg-[#1A1A1A] translate-x-1/2" />
-        </div>
-      </div>
+      {/* Agents Panel Modal */}
+      <AgentsPanel
+        isOpen={isAgentsPanelOpen}
+        onClose={() => setIsAgentsPanelOpen(false)}
+        activeAgentId={currentAgentId}
+      />
     </div>
+  )
+}
+
+// Main App with Router
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Root - Home page */}
+        <Route path="/" element={<HomePage />} />
+        
+        {/* V1 - Sidebar layout */}
+        <Route path="/v1" element={<V1Page />} />
+        
+        {/* V2 - Canvas-focused layout */}
+        <Route path="/v2" element={<V2Page />} />
+        
+        {/* V3 - Theatrical premium layout */}
+        <Route path="/v3" element={<V3Page />} />
+        
+        {/* V4 - Linear-inspired clean layout */}
+        <Route path="/v4" element={<V4Page />} />
+        
+        {/* Catch-all redirect to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 

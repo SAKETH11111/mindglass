@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useDebateStore } from './useDebateStore';
-import { AGENT_IDS, type AgentId } from '@/types/agent';
+import { AGENT_IDS } from '@/types/agent';
 
 describe('useDebateStore', () => {
   beforeEach(() => {

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Send, Loader2 } from 'lucide-react';
@@ -11,7 +11,14 @@ interface DebateInputProps {
 
 export function DebateInput({ onSubmit, disabled = false }: DebateInputProps) {
   const [query, setQuery] = useState('');
-  const { connectionState, isStreaming } = useDebateStore();
+  const connectionState = useDebateStore((state) => state.connectionState);
+  const agents = useDebateStore((state) => state.agents);
+  const isDebating = useDebateStore((state) => state.isDebating);
+
+  // Check if any agent is currently streaming
+  const isStreaming = useMemo(() => {
+    return Object.values(agents).some((agent) => agent.isStreaming);
+  }, [agents]);
 
   const isConnecting = connectionState === 'connecting';
   const isConnected = connectionState === 'connected';
@@ -48,8 +55,10 @@ export function DebateInput({ onSubmit, disabled = false }: DebateInputProps) {
               isConnecting
                 ? 'Connecting...'
                 : isStreaming
-                  ? 'Agent is responding...'
-                  : 'Enter your question...'
+                  ? 'Agents are debating...'
+                  : isDebating
+                    ? 'Debate in progress...'
+                    : 'Enter your question...'
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -87,8 +96,10 @@ export function DebateInput({ onSubmit, disabled = false }: DebateInputProps) {
         {isConnecting
           ? 'Connecting to debate server...'
           : isStreaming
-            ? 'Receiving agent response...'
-            : 'Ask anything to start a multi-agent debate'}
+            ? 'Receiving agent responses...'
+            : isDebating
+              ? 'Processing debate...'
+              : 'Ask anything to start a multi-agent debate'}
       </p>
     </form>
   );

@@ -24,6 +24,11 @@ interface DebateState {
   // Agents (all 8)
   agents: Record<AgentId, AgentState>;
 
+  // Legacy compat (for original HomePage)
+  agentText: string;
+  isStreaming: boolean;
+  currentAgentId: AgentId | null;
+
   // Metrics
   tokensPerSecond: number;
   totalTokens: number;
@@ -47,6 +52,7 @@ interface DebateState {
   endDebate: () => void;
   resetDebate: () => void;
   setError: (error: string | null) => void;
+  clearResponse: () => void;
 
   // Graph actions
   addNode: (node: GraphNode) => void;
@@ -83,6 +89,11 @@ const initialState = {
   query: '',
   isDebating: false,
   agents: createInitialAgents(),
+  // Legacy compat
+  agentText: '',
+  isStreaming: false,
+  currentAgentId: null as AgentId | null,
+  // Metrics
   tokensPerSecond: 0,
   totalTokens: 0,
   error: null,
@@ -92,7 +103,7 @@ const initialState = {
 };
 
 export const useDebateStore = create<DebateState>()(
-  subscribeWithSelector((set, get) => ({
+  subscribeWithSelector((set, _get) => ({
     ...initialState,
 
     setConnectionState: (connectionState) => set({ connectionState }),
@@ -188,6 +199,13 @@ export const useDebateStore = create<DebateState>()(
     resetDebate: () => set(initialState),
 
     setError: (error) => set({ error }),
+
+    clearResponse: () => set({
+      agentText: '',
+      isStreaming: false,
+      currentAgentId: null,
+      agents: createInitialAgents(),
+    }),
 
     // Graph actions
     addNode: (node) =>

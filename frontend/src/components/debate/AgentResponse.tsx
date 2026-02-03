@@ -1,26 +1,39 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { AGENT_COLORS, AGENT_NAMES } from '@/types/agent';
 import type { AgentId } from '@/types/agent';
 
 export function AgentResponse() {
-  const { agentText, isStreaming, currentAgentId } = useDebateStore();
+  const agents = useDebateStore((state) => state.agents);
+  const isDebating = useDebateStore((state) => state.isDebating);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Find the currently streaming or most recently active agent
+  const activeAgent = useMemo(() => {
+    const agentList = Object.values(agents);
+    // First try to find a streaming agent
+    const streaming = agentList.find((a) => a.isStreaming);
+    if (streaming) return streaming;
+    // Otherwise find any active agent with text
+    return agentList.find((a) => a.isActive && a.text);
+  }, [agents]);
 
   // Auto-scroll to bottom as text appears
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [agentText]);
+  }, [activeAgent?.text]);
 
-  if (!currentAgentId && !agentText) {
+  if (!activeAgent || (!activeAgent.text && !isDebating)) {
     return null;
   }
 
-  const agentId = (currentAgentId as AgentId) || 'analyst';
+  const agentId = activeAgent.id as AgentId;
   const agentColor = AGENT_COLORS[agentId];
   const agentName = AGENT_NAMES[agentId];
+  const isStreaming = activeAgent.isStreaming;
+  const agentText = activeAgent.text;
 
   return (
     <div className="w-full max-w-2xl mx-auto mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useDebateStore } from './useDebateStore';
-import { useAgent, useAgentText, usePhase, useMetrics } from './useAgent';
+import { useAgent, useAgentText, usePhase } from './useAgent';
 
 describe('Store Reactivity', () => {
   beforeEach(() => {

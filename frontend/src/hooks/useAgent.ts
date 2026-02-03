@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
 import { useDebateStore } from './useDebateStore';
 import type { AgentId, AgentState, Phase } from '@/types/agent';
+import { useShallow } from 'zustand/react/shallow';
 
 // Select single agent - only re-renders when this agent changes
 export const useAgent = (agentId: AgentId): AgentState => {
@@ -42,12 +42,10 @@ export const useStreamingAgents = (): AgentState[] => {
 // Select metrics - stable object reference
 export const useMetrics = (): { tokensPerSecond: number; totalTokens: number } => {
   return useDebateStore(
-    (state) => ({
+    useShallow((state) => ({
       tokensPerSecond: state.tokensPerSecond,
       totalTokens: state.totalTokens,
-    }),
-    // Custom equality function to prevent unnecessary re-renders
-    (a, b) => a.tokensPerSecond === b.tokensPerSecond && a.totalTokens === b.totalTokens
+    }))
   );
 };
 

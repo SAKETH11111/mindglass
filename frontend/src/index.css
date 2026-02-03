@@ -84,6 +84,29 @@
     /* Fonts - Manrope is Cerebras brand font */
     --font-family-sans: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
     --font-family-mono: "JetBrains Mono", "Fira Code", monospace;
+
+    /* Sidebar - Cerebras Dark Theme */
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 0 0% 69%;
+    --sidebar-primary: 15 88% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 15 88% 55%;
+  }
+  .dark {
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 0 0% 69%;
+    --sidebar-primary: 15 88% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 15 88% 55%;
+  }
+  .theme {
+    --animate-orbit: orbit calc(var(--duration)*1s) linear infinite;
   }
 }
 
@@ -183,7 +206,7 @@
   }
 
   /* Custom colors for backwards compatibility */
-  .bg-mindglass {
+  .bg-prism {
     background-color: var(--color-bg-primary);
   }
 
@@ -235,4 +258,80 @@
 ::selection {
   background: rgba(241, 90, 41, 0.3);
   color: var(--color-text-primary);
+}
+
+@theme inline {
+  @keyframes moveBackground {
+  from {
+    background-position: 0% 0%;
+    }
+  to {
+    background-position: 0% -1000%;
+    }
+  }
+  @keyframes orbit {
+  0% {
+    transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+    }
+  100% {
+    transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px)) rotate(calc((var(--angle) * -1deg) - 360deg));
+    }
+  }
+  @keyframes shimmer {
+  0%, 100% {
+    transform: translateX(-100%) rotate(45deg);
+    }
+  50% {
+    transform: translateX(100%) rotate(45deg);
+    }
+  }
+  @keyframes float1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    }
+  33% {
+    transform: translate(30px, -30px) scale(1.05);
+    }
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+    }
+  }
+  @keyframes float2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    }
+  33% {
+    transform: translate(-40px, 20px) scale(1.1);
+    }
+  66% {
+    transform: translate(30px, -40px) scale(0.9);
+    }
+  }
+  @keyframes float3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    }
+  50% {
+    transform: translate(50px, 30px) scale(1.15);
+    }
+  }
+  @keyframes dropdownIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+    }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

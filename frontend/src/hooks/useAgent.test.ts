@@ -1,13 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import {
   useAgent,
   useAgentText,
   useAgentStreaming,
   useAgentActive,
-  useActiveAgents,
-  useStreamingAgents,
-  useMetrics,
   usePhase,
   useConnectionState,
   useIsDebating,
