@@ -62,6 +62,8 @@ describe('Agent Types', () => {
         isActive: true,
         isStreaming: true,
         tokenCount: 10,
+        tokensPerSecond: 0,
+        streamStartTime: null,
       };
 
       expect(state.id).toBe('analyst');
@@ -84,6 +86,8 @@ describe('Agent Types', () => {
         isActive: false,
         isStreaming: false,
         tokenCount: 0,
+        tokensPerSecond: 0,
+        streamStartTime: null,
       };
 
       expect(state.phase).toBeNull();

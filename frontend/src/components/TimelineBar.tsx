@@ -27,8 +27,6 @@ export function TimelineBar({
   const debateStartTime = useDebateStore((state) => state.debateStartTime);
   const jumpToCheckpoint = useDebateStore((state) => state.jumpToCheckpoint);
   const exitTimeTravel = useDebateStore((state) => state.exitTimeTravel);
-  const isDebating = useDebateStore((state) => state.isDebating);
-  const phase = useDebateStore((state) => state.phase);
 
   // Calculate max duration dynamically from last checkpoint or elapsed time
   const lastCheckpointTime = checkpoints.length > 0

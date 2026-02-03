@@ -64,7 +64,8 @@ export function DebatePage() {
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const totalTokens = useDebateStore((state) => state.totalTokens);
-  const connectionState = useDebateStore((state) => state.connectionState);
+  const resetDebate = useDebateStore((state) => state.resetDebate);
+  const storeQuery = useDebateStore((state) => state.query);
 
   // WebSocket
   const { isReady, startDebateSession, injectConstraint } = useWebSocket();
@@ -72,6 +73,13 @@ export function DebatePage() {
   // Timing
   const debateStartTime = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+
+  // Reset store when query changes (new debate started from home page)
+  useEffect(() => {
+    if (query && query !== storeQuery) {
+      resetDebate();
+    }
+  }, [query, storeQuery, resetDebate]);
 
   // Start debate on mount
   useEffect(() => {

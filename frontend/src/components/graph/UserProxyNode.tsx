@@ -8,13 +8,14 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 
-export interface UserProxyNodeData {
+export interface UserProxyNodeData extends Record<string, unknown> {
   text: string;
   timestamp: number;
   isStreaming?: boolean;
 }
 
-export const UserProxyNode = memo(({ data }: NodeProps<UserProxyNodeData>) => {
+function UserProxyNodeComponent({ data }: NodeProps) {
+  const { text, timestamp, isStreaming } = data as UserProxyNodeData;
   return (
     <div className="relative">
       {/* Hexagon shape using clip-path */}
@@ -23,7 +24,7 @@ export const UserProxyNode = memo(({ data }: NodeProps<UserProxyNodeData>) => {
           relative px-6 py-4 min-w-[200px] max-w-[320px]
           bg-[#1a1a1a] border-2 border-[#888888]
           transition-all duration-300
-          ${data.isStreaming ? 'animate-pulse border-white' : ''}
+          ${isStreaming ? 'animate-pulse border-white' : ''}
         `}
         style={{
           clipPath: 'polygon(10% 0%, 90% 0%, 100% 50%, 90% 100%, 10% 100%, 0% 50%)',
@@ -37,24 +38,24 @@ export const UserProxyNode = memo(({ data }: NodeProps<UserProxyNodeData>) => {
             <span className="text-[10px] font-mono uppercase tracking-widest text-[#888888]">
               User Constraint
             </span>
-            {data.isStreaming && (
+            {isStreaming && (
               <div className="w-1.5 h-1.5 bg-emerald-500 animate-pulse ml-auto" />
             )}
           </div>
 
           {/* Constraint text */}
           <p className="text-sm text-white/80 leading-relaxed font-mono">
-            {data.text}
+            {text}
           </p>
 
           {/* Timestamp */}
           <p className="text-[9px] text-white/30 mt-2 font-mono">
-            {new Date(data.timestamp).toLocaleTimeString()}
+            {new Date(timestamp).toLocaleTimeString()}
           </p>
         </div>
 
         {/* Glow effect when active */}
-        {data.isStreaming && (
+        {isStreaming && (
           <div
             className="absolute inset-0 opacity-30 pointer-events-none"
             style={{
@@ -92,6 +93,8 @@ export const UserProxyNode = memo(({ data }: NodeProps<UserProxyNodeData>) => {
       />
     </div>
   );
-});
+}
+
+export const UserProxyNode = memo(UserProxyNodeComponent);
 
 UserProxyNode.displayName = 'UserProxyNode';

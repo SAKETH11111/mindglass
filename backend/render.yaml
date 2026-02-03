@@ -1,0 +1,22 @@
+# Render.com deployment configuration
+# This file defines how to deploy the MindGlass backend on Render
+
+services:
+  - type: web
+    name: mindglass-backend
+    runtime: python
+    plan: standard  # Upgrade to standard for better WebSocket performance
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --ws websockets
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        value: 8000
+      - key: CEREBRAS_API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: FRONTEND_URL
+        value: https://frontend-nine-iota-86.vercel.app  # Your Vercel frontend URL
+      - key: DEBUG
+        value: false
+    healthCheckPath: /api/health

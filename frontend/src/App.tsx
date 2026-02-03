@@ -25,7 +25,7 @@ function HomePage() {
   const [inputValue, setInputValue] = useState("")
   const [isFocused, setIsFocused] = useState(false)
   const [isAgentsPanelOpen, setIsAgentsPanelOpen] = useState(false)
-  const [selectedTier, setSelectedTier] = useState<ModelTier>('pro')
+  const [selectedTier, setSelectedTier] = useState<ModelTier>('fast')
   const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy')
   const navigate = useNavigate()
 
@@ -192,18 +192,18 @@ function HomePage() {
                   <button
                     type="button"
                     onClick={() => setIsAgentsPanelOpen(true)}
-                    className="flex items-center -space-x-1 hover:opacity-90 transition-opacity"
+                    className="flex items-center -space-x-0.5 hover:opacity-90 transition-opacity"
                   >
-                    {AGENT_IDS.slice(0, 6).map((agent) => {
+                    {AGENT_IDS.slice(0, 4).map((agent) => {
                       const avatar = AGENT_AVATARS[agent]
                       const color = AGENT_COLORS[agent]
                       const name = AGENT_NAMES[agent]
-                      
+
                       return (
                         <div key={agent} className="group relative">
                           <div
                             className={`
-                              w-7 h-7 overflow-hidden
+                              w-6 h-6 overflow-hidden
                               transition-all duration-200 cursor-pointer
                               ${designMode === 'boxy'
                                 ? 'border border-white/30 hover:z-10 hover:scale-110'
@@ -214,7 +214,7 @@ function HomePage() {
                           >
                             <img src={avatar} alt={name} className="w-full h-full" />
                           </div>
-                          
+
                           {/* Tooltip */}
                           <div
                             className={`
@@ -231,11 +231,11 @@ function HomePage() {
                         </div>
                       )
                     })}
-                    {/* +2 more indicator */}
-                    <div className={`w-7 h-7 flex items-center justify-center bg-white/10 text-[10px] text-white font-medium hover:bg-white/20 transition-colors ${
+                    {/* +4 more indicator */}
+                    <div className={`w-6 h-6 flex items-center justify-center bg-white/10 text-[9px] text-white font-medium hover:bg-white/20 transition-colors ${
                       designMode === 'boxy' ? 'border border-white/30' : 'border-2 border-black/50 rounded-full'
                     }`}>
-                      +2
+                      +4
                     </div>
                   </button>
                   

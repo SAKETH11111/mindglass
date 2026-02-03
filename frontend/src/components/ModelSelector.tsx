@@ -109,10 +109,14 @@ export function ModelSelector({ selectedTier, onTierChange, disabled, designMode
       {/* Dropdown */}
       {isOpen && (
         <>
-          {/* Backdrop blur layer */}
-          <div className="fixed inset-0 z-40" aria-hidden="true" />
-          
-          <div 
+          {/* Backdrop - click to close */}
+          <div
+            className="fixed inset-0 z-40"
+            aria-hidden="true"
+            onClick={() => setIsOpen(false)}
+          />
+
+          <div
             className="
               absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-52
               z-50

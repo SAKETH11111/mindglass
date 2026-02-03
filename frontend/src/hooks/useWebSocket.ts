@@ -1,8 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import type { WebSocketMessage } from '@/types';
+import type { Phase, AgentId } from '@/types/agent';
 
-const WS_URL = 'ws://localhost:8000/ws/debate';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
@@ -108,16 +109,15 @@ export function useWebSocket() {
             case 'phase_start': {
               // New round-based streaming message - use round name directly
               console.log(`Round ${data.phase} started: ${data.name}`);
-              // Use the round name directly as the phase
-              const phaseName = data.name || 'dispatch';
-              setPhase(phaseName, data.agents || []);
+              // Use the round name directly as the phase (cast to Phase since names are valid phases)
+              setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
               break;
             }
 
             case 'round_start': {
               // New round-based debate message
               console.log(`Round ${data.round} started: ${data.name}`);
-              setPhase(data.name, data.agents || []);
+              setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
               break;
             }
 

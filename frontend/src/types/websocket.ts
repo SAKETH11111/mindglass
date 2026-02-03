@@ -58,6 +58,7 @@ export interface PhaseStartMessage {
   type: 'phase_start';
   phase: number;
   name: string;
+  agents?: string[];
   timestamp?: number;
 }
 

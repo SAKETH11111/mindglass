@@ -14,7 +14,7 @@ export interface AgentNodeData extends Record<string, unknown> {
 export type AgentThoughtNode = Node<AgentNodeData, 'agentThought'>;
 
 export interface DebateEdgeData extends Record<string, unknown> {
-  edgeType: 'supports' | 'refutes' | 'depends';
+  edgeType: 'supports' | 'refutes' | 'depends' | 'constraint';
   strength: number;
 }
 
