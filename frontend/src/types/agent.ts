@@ -147,4 +147,8 @@ export interface AgentState {
   tokenCount: number;
   tokensPerSecond: number;
   streamStartTime: number | null;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  completionTime: number;
 }

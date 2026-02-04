@@ -210,7 +210,7 @@ export function DebatePage() {
     return () => clearInterval(interval);
   }, [isDebating]);
 
-  // NOTE: Using simulated TPS (1800-2500) from store instead of real agent metrics
+  // NOTE: Aggregate TPS is derived from real agent metrics in the store
   // const currentTps = useMemo(() => {
   //   const agentTps = effectiveSelectedAgents.map(id => agents[id]?.tokensPerSecond || 0);
   //   return Math.max(...agentTps, 0);

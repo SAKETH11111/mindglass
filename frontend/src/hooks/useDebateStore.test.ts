@@ -49,6 +49,10 @@ describe('useDebateStore', () => {
         expect(agent.isActive).toBe(false);
         expect(agent.isStreaming).toBe(false);
         expect(agent.tokenCount).toBe(0);
+        expect(agent.promptTokens).toBe(0);
+        expect(agent.completionTokens).toBe(0);
+        expect(agent.totalTokens).toBe(0);
+        expect(agent.completionTime).toBe(0);
       });
     });
 

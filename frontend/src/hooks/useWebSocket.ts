@@ -20,7 +20,6 @@ export function useWebSocket() {
     setPhase,
     setAgentDone,
     setAgentError,
-    updateMetrics,
     endDebate,
     setError,
     startDebate,
@@ -28,8 +27,6 @@ export function useWebSocket() {
     addCheckpoint,
     setUserProxyNode,
     setShowApiKeyModal,
-    startSimulatedTps,
-    stopSimulatedTps,
   } = useDebateStore();
 
   const connect = useCallback(() => {
@@ -85,7 +82,13 @@ export function useWebSocket() {
             }
 
             case 'agent_metrics': {
-              setAgentMetrics(data.agentId, data.tokensPerSecond, data.totalTokens);
+              setAgentMetrics(data.agentId, {
+                tokensPerSecond: data.tokensPerSecond,
+                totalTokens: data.totalTokens,
+                promptTokens: data.promptTokens,
+                completionTokens: data.completionTokens,
+                completionTime: data.completionTime,
+              });
               break;
             }
 
@@ -138,15 +141,13 @@ export function useWebSocket() {
             }
 
             case 'metrics': {
-              // NOTE: Commented out to use simulated TPS (1800-2500) instead of real metrics
+              // NOTE: We derive TPS from agent_metrics to reflect real Cerebras timings
               // updateMetrics(data.tokensPerSecond, data.totalTokens);
               break;
             }
 
             case 'debate_complete': {
               endDebate();
-              // Stop simulated TPS when debate ends
-              stopSimulatedTps();
               console.log('Debate complete');
               break;
             }
@@ -199,7 +200,7 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket:', err);
       setError('Failed to connect to server');
     }
-  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal, stopSimulatedTps]);
+  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
 
   useEffect(() => {
     connect();
@@ -243,8 +244,6 @@ export function useWebSocket() {
   ) => {
     // Update local state first with industry for proper agent initialization
     startDebate(query, industry);
-    // Start simulated TPS for demo (random 1800-2500)
-    startSimulatedTps();
     // Send to server with model selection, context, and agent selection
     return sendMessage({
       type: 'start_debate',
@@ -254,7 +253,7 @@ export function useWebSocket() {
       selectedAgents: selectedAgents || null,
       industry: industry || '',
     });
-  }, [sendMessage, startDebate, startSimulatedTps]);
+  }, [sendMessage, startDebate]);
 
   // Start a follow-up debate WITHOUT resetting store state (for multi-turn conversations)
   const startFollowUpSession = useCallback((

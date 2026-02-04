@@ -19,6 +19,7 @@ export interface AgentMetricsMessage {
   totalTokens: number;
   promptTokens: number;
   completionTokens: number;
+  completionTime: number;
   timestamp: number;
 }
 

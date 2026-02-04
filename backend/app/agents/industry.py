@@ -57,24 +57,57 @@ def create_industry_agent_class(
                 stream = self.client.chat.completions.create(**params)
 
                 loop = asyncio.get_event_loop()
+
                 def get_next_chunk(iterator):
                     try:
                         return next(iterator)
                     except StopIteration:
                         return None
 
+                iterator = iter(stream)
+                final_usage = None
+                final_time_info = None
+
                 while True:
-                    chunk = await loop.run_in_executor(None, get_next_chunk, stream)
+                    chunk = await loop.run_in_executor(None, get_next_chunk, iterator)
                     if chunk is None:
                         break
+
+                    if hasattr(chunk, 'usage') and chunk.usage:
+                        final_usage = chunk.usage
+                    if hasattr(chunk, 'time_info') and chunk.time_info:
+                        final_time_info = chunk.time_info
+
                     if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
                         token_count += 1
                         yield self._create_token_message(content)
 
-                elapsed = time.time() - start_time
-                tokens_per_second = token_count / elapsed if elapsed > 0 else 0
-                yield self._create_metrics_message(tokens_per_second, token_count)
+                completion_time = None
+                if final_time_info and hasattr(final_time_info, 'completion_time'):
+                    completion_time = final_time_info.completion_time
+
+                elapsed = None
+                if completion_time and completion_time > 0:
+                    completion_tokens_count = final_usage.completion_tokens if final_usage else token_count
+                    tokens_per_second = completion_tokens_count / completion_time
+                else:
+                    elapsed = time.time() - start_time
+                    tokens_per_second = token_count / elapsed if elapsed > 0 else 0
+
+                metrics_time = completion_time if completion_time and completion_time > 0 else (elapsed or 0)
+
+                prompt_tokens = final_usage.prompt_tokens if final_usage else 0
+                completion_tokens = final_usage.completion_tokens if final_usage else token_count
+                total_tokens = final_usage.total_tokens if final_usage else token_count
+
+                yield self._create_metrics_message(
+                    tokens_per_second=tokens_per_second,
+                    total_tokens=total_tokens,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    completion_time=metrics_time,
+                )
                 yield self._create_done_message()
                 self.set_status("idle")
 

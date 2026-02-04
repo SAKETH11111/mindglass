@@ -64,6 +64,10 @@ describe('Agent Types', () => {
         tokenCount: 10,
         tokensPerSecond: 0,
         streamStartTime: null,
+        promptTokens: 0,
+        completionTokens: 10,
+        totalTokens: 20,
+        completionTime: 0,
       };
 
       expect(state.id).toBe('analyst');
@@ -88,6 +92,10 @@ describe('Agent Types', () => {
         tokenCount: 0,
         tokensPerSecond: 0,
         streamStartTime: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        completionTime: 0,
       };
 
       expect(state.phase).toBeNull();

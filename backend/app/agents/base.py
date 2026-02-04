@@ -40,7 +40,14 @@ class BaseAgent(ABC):
             "timestamp": int(datetime.now().timestamp() * 1000)
         }
 
-    def _create_metrics_message(self, tokens_per_second: float, total_tokens: int, prompt_tokens: int = 0, completion_tokens: int = 0) -> Dict[str, Any]:
+    def _create_metrics_message(
+        self,
+        tokens_per_second: float,
+        total_tokens: int,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        completion_time: float = 0,
+    ) -> Dict[str, Any]:
         """Create a standardized agent metrics message with token usage."""
         return {
             "type": "agent_metrics",
@@ -49,6 +56,7 @@ class BaseAgent(ABC):
             "totalTokens": total_tokens,
             "promptTokens": prompt_tokens,
             "completionTokens": completion_tokens,
+            "completionTime": completion_time,
             "timestamp": int(datetime.now().timestamp() * 1000)
         }
 

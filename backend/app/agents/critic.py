@@ -85,12 +85,15 @@ class CriticAgent(LLMAgent):
             if final_time_info and hasattr(final_time_info, 'completion_time'):
                 completion_time = final_time_info.completion_time
             
+            elapsed_time = None
             if completion_time and completion_time > 0:
                 completion_tokens_count = final_usage.completion_tokens if final_usage else token_count
                 tokens_per_second = completion_tokens_count / completion_time
             else:
                 elapsed_time = time.time() - start_time
                 tokens_per_second = token_count / elapsed_time if elapsed_time > 0 else 0
+
+            metrics_time = completion_time if completion_time and completion_time > 0 else (elapsed_time or 0)
 
             # Send metrics message with token usage from final chunk
             prompt_tokens = final_usage.prompt_tokens if final_usage else 0
@@ -101,7 +104,8 @@ class CriticAgent(LLMAgent):
                 tokens_per_second=tokens_per_second,
                 total_tokens=total_tokens,
                 prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens
+                completion_tokens=completion_tokens,
+                completion_time=metrics_time,
             )
 
             yield self._create_done_message()

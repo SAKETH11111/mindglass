@@ -13,6 +13,14 @@ import type { GraphNode, GraphEdge } from '@/types/graph';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+interface AgentMetricsPayload {
+  tokensPerSecond: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  completionTime: number;
+}
+
 // Checkpoint for timeline time-travel
 export interface Checkpoint {
   id: string;
@@ -41,7 +49,7 @@ export interface FollowUpNode {
   turnIndex: number; // Which turn this leads into
 }
 
-// Simulated TPS for demo (random between 1800-2500)
+// Legacy simulated TPS for demo (kept for fallback)
 let tpsInterval: ReturnType<typeof setInterval> | null = null;
 
 interface DebateState {
@@ -100,7 +108,7 @@ interface DebateState {
   setConnectionState: (state: ConnectionState) => void;
   startDebate: (query: string, industry?: string) => void;
   appendToken: (agentId: string, content: string) => void;
-  setAgentMetrics: (agentId: string, tokensPerSecond: number, totalTokens: number) => void;
+  setAgentMetrics: (agentId: string, metrics: AgentMetricsPayload) => void;
   setPhase: (phase: Phase, activeAgents: string[]) => void;
   setAgentDone: (agentId: string) => void;
   setAgentError: (agentId: string, error: string) => void;
@@ -164,6 +172,10 @@ const createInitialAgents = (industry?: string): Record<string, AgentState> => {
       tokenCount: 0,
       tokensPerSecond: 0,
       streamStartTime: null,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      completionTime: 0,
     };
   }
   return agents;
@@ -251,12 +263,16 @@ export const useDebateStore = create<DebateState>()(
             color: AGENT_COLORS[agentId] || '#6B7280',
             phase: null,
             isActive: true,
-            isStreaming: true,
-            tokenCount: 0,
-            tokensPerSecond: 0,
-            streamStartTime: Date.now(),
-          };
-        }
+          isStreaming: true,
+          tokenCount: 0,
+          tokensPerSecond: 0,
+          streamStartTime: Date.now(),
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          completionTime: 0,
+        };
+      }
         
         const now = Date.now();
 
@@ -283,17 +299,60 @@ export const useDebateStore = create<DebateState>()(
         };
       }),
 
-    setAgentMetrics: (agentId, tokensPerSecond, totalTokens) =>
-      set((state) => ({
-        agents: {
+    setAgentMetrics: (agentId, metrics) =>
+      set((state) => {
+        const existingAgent = state.agents[agentId];
+        const agent = existingAgent || {
+          id: agentId,
+          name: AGENT_NAMES[agentId] || agentId,
+          text: '',
+          color: AGENT_COLORS[agentId] || '#6B7280',
+          phase: null,
+          isActive: true,
+          isStreaming: false,
+          tokenCount: 0,
+          tokensPerSecond: 0,
+          streamStartTime: null,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          completionTime: 0,
+        };
+
+        const updatedAgents = {
           ...state.agents,
           [agentId]: {
-            ...state.agents[agentId],
-            tokensPerSecond,
-            tokenCount: totalTokens,
+            ...agent,
+            tokensPerSecond: metrics.tokensPerSecond,
+            tokenCount: metrics.completionTokens,
+            promptTokens: metrics.promptTokens,
+            completionTokens: metrics.completionTokens,
+            totalTokens: metrics.totalTokens,
+            completionTime: metrics.completionTime,
           },
-        },
-      })),
+        };
+
+        let completionTokensTotal = 0;
+        let completionTimeTotal = 0;
+        for (const value of Object.values(updatedAgents)) {
+          if (value.completionTokens > 0) {
+            completionTokensTotal += value.completionTokens;
+          }
+          if (value.completionTime > 0) {
+            completionTimeTotal += value.completionTime;
+          }
+        }
+
+        const tokensPerSecond = completionTimeTotal > 0
+          ? completionTokensTotal / completionTimeTotal
+          : 0;
+
+        return {
+          agents: updatedAgents,
+          tokensPerSecond,
+          totalTokens: completionTokensTotal,
+        };
+      }),
 
     setPhase: (phase, activeAgents) =>
       set((state) => {
