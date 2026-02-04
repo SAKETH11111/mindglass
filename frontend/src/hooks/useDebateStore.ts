@@ -24,6 +24,22 @@ export interface Checkpoint {
   agentTexts: Record<AgentId, string>;
 }
 
+// A completed debate turn (for follow-up questions)
+export interface DebateTurnSnapshot {
+  id: string;
+  query: string;
+  agentTexts: Record<AgentId, string>;
+  timestamp: number;
+}
+
+// User's follow-up question node
+export interface FollowUpNode {
+  id: string;
+  text: string;
+  timestamp: number;
+  turnIndex: number; // Which turn this leads into
+}
+
 interface DebateState {
   // Connection
   connectionState: ConnectionState;
@@ -64,6 +80,11 @@ interface DebateState {
   activeCheckpointIndex: number | null;  // null = live, number = viewing checkpoint
   debateStartTime: number | null;
 
+  // Follow-up conversation support
+  completedTurns: DebateTurnSnapshot[]; // Previous completed debate turns
+  followUpNodes: FollowUpNode[]; // User's follow-up questions
+  currentTurnIndex: number; // 0 = first turn, 1 = after first follow-up, etc.
+
   // Actions
   setConnectionState: (state: ConnectionState) => void;
   startDebate: (query: string) => void;
@@ -99,6 +120,12 @@ interface DebateState {
   jumpToCheckpoint: (index: number) => void;
   exitTimeTravel: () => void;
   clearCheckpoints: () => void;
+
+  // Follow-up conversation actions
+  saveCurrentTurn: () => void; // Save current agents as a completed turn
+  addFollowUpQuestion: (question: string) => void; // Add a "YOU" node for follow-up
+  startFollowUpDebate: (query: string) => void; // Start a new debate round for follow-up
+  clearConversation: () => void; // Reset all turns and follow-ups
 }
 
 const createInitialAgents = (): Record<AgentId, AgentState> => {
@@ -144,6 +171,10 @@ const initialState = {
   checkpoints: [] as Checkpoint[],
   activeCheckpointIndex: null as number | null,
   debateStartTime: null as number | null,
+  // Follow-up conversation
+  completedTurns: [] as DebateTurnSnapshot[],
+  followUpNodes: [] as FollowUpNode[],
+  currentTurnIndex: 0,
 };
 
 export const useDebateStore = create<DebateState>()(
@@ -169,6 +200,10 @@ export const useDebateStore = create<DebateState>()(
         checkpoints: [],
         activeCheckpointIndex: null,
         debateStartTime: Date.now(),
+        // Reset follow-up state for fresh debates
+        completedTurns: [],
+        followUpNodes: [],
+        currentTurnIndex: 0,
       }),
 
     appendToken: (agentId, content) =>
@@ -407,5 +442,68 @@ export const useDebateStore = create<DebateState>()(
       }),
 
     clearCheckpoints: () => set({ checkpoints: [], activeCheckpointIndex: null }),
+
+    // Follow-up conversation actions
+    saveCurrentTurn: () =>
+      set((state) => {
+        // Capture current agent texts as a completed turn
+        const agentTexts = {} as Record<AgentId, string>;
+        for (const id of AGENT_IDS) {
+          agentTexts[id] = state.agents[id].text;
+        }
+        
+        const newTurn: DebateTurnSnapshot = {
+          id: `turn-${state.currentTurnIndex}-${Date.now()}`,
+          query: state.query,
+          agentTexts,
+          timestamp: Date.now(),
+        };
+
+        return {
+          completedTurns: [...state.completedTurns, newTurn],
+        };
+      }),
+
+    addFollowUpQuestion: (question: string) =>
+      set((state) => {
+        const newFollowUp: FollowUpNode = {
+          id: `followup-${state.followUpNodes.length}-${Date.now()}`,
+          text: question,
+          timestamp: Date.now(),
+          turnIndex: state.currentTurnIndex + 1, // This leads into the next turn
+        };
+
+        return {
+          followUpNodes: [...state.followUpNodes, newFollowUp],
+        };
+      }),
+
+    startFollowUpDebate: (query: string) =>
+      set((state) => ({
+        // Keep completed turns and follow-ups, but reset current agents for new round
+        query,
+        phase: 'idle',
+        isDebating: true,
+        agents: createInitialAgents(),
+        tokensPerSecond: 0,
+        totalTokens: 0,
+        error: null,
+        constraints: [],
+        userProxyNode: null,
+        checkpoints: [],
+        activeCheckpointIndex: null,
+        debateStartTime: Date.now(),
+        currentTurnIndex: state.currentTurnIndex + 1,
+        // Keep: completedTurns, followUpNodes, nodes, edges preserved
+      })),
+
+    clearConversation: () =>
+      set({
+        completedTurns: [],
+        followUpNodes: [],
+        currentTurnIndex: 0,
+        nodes: [],
+        edges: [],
+      }),
   }))
 );

@@ -95,9 +95,19 @@ class AnalystAgent(LLMAgent):
                     token_count += 1
                     yield self._create_token_message(token)
 
-            # Calculate tokens per second
-            elapsed_time = time.time() - start_time
-            tokens_per_second = token_count / elapsed_time if elapsed_time > 0 else 0
+            # Calculate tokens per second using API's completion_time for accurate measurement
+            # The API provides time_info.completion_time which is the actual inference time
+            completion_time = None
+            if final_time_info and hasattr(final_time_info, 'completion_time'):
+                completion_time = final_time_info.completion_time
+            
+            # Use API's completion_time if available, otherwise fall back to wall clock
+            if completion_time and completion_time > 0:
+                completion_tokens_count = final_usage.completion_tokens if final_usage else token_count
+                tokens_per_second = completion_tokens_count / completion_time
+            else:
+                elapsed_time = time.time() - start_time
+                tokens_per_second = token_count / elapsed_time if elapsed_time > 0 else 0
 
             # Send metrics message with token usage from final chunk
             prompt_tokens = final_usage.prompt_tokens if final_usage else 0

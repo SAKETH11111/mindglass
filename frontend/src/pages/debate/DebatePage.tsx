@@ -1,14 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { Send } from 'lucide-react';
+import { Send, MessageSquarePlus } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useSessionStore } from '@/hooks/useSessionStore';
+import { DotMatrixText } from '@/components/DotMatrixText';
 
 // DiceBear Notionists avatar URL generator
-const getAvatarUrl = (agentId: AgentId) =>
-  `https://api.dicebear.com/7.x/notionists/svg?seed=${agentId}&backgroundColor=transparent`;
+const getAvatarUrl = (agentId: AgentId) => {
+  // Use 'leader' seed for synthesizer for a more professional/confident look
+  const seed = agentId === 'synthesizer' ? 'leader' : agentId;
+  return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=transparent`;
+};
 
 // Format tokens per second for display
 const formatTokPerSec = (tokensPerSecond: number): string => {
@@ -152,6 +157,13 @@ export function DebatePage() {
   const navigate = useNavigate();
   const query = searchParams.get('q') || '';
   const modelTier = searchParams.get('model') || 'pro'; // Default to 'pro' if not specified
+  const agentsParam = searchParams.get('agents'); // Custom agent selection
+  const sessionIdParam = searchParams.get('session'); // Session ID for resuming
+
+  // Parse selected agents from URL - if param exists, use it; otherwise will be set from session store
+  const agentsFromUrl = agentsParam 
+    ? agentsParam.split(',').filter(a => AGENT_IDS.includes(a as AgentId)) as AgentId[]
+    : null; // null means use session store's selection
 
   // Design mode toggle (matches homepage)
   const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy');
@@ -167,12 +179,37 @@ export function DebatePage() {
   const [isPerspectivesOpen, setIsPerspectivesOpen] = useState(true);
   const [openAgents, setOpenAgents] = useState<Set<AgentId>>(new Set());
 
+  // Follow-up question state
+  const [followUpInput, setFollowUpInput] = useState('');
+  const [showFollowUp, setShowFollowUp] = useState(false);
+
+  // Session store for managing conversation history
+  const {
+    currentSession,
+    getPreviousTurnsContext,
+    startNewTurn,
+    completeTurn,
+    updateTurnResponse,
+    loadSession,
+    setSelectedAgents,
+    selectedAgents: storeSelectedAgents,
+  } = useSessionStore();
+
+  // Effective selected agents: URL param takes precedence, then session store
+  const selectedAgentsFromUrl = agentsFromUrl || storeSelectedAgents;
+
   // Store state
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const connectionState = useDebateStore((state) => state.connectionState);
   const totalTokens = useDebateStore((state) => state.totalTokens);
+  const resetDebate = useDebateStore((state) => state.resetDebate);
+  
+  // Follow-up conversation actions
+  const saveCurrentTurn = useDebateStore((state) => state.saveCurrentTurn);
+  const addFollowUpQuestion = useDebateStore((state) => state.addFollowUpQuestion);
+  const startFollowUpDebate = useDebateStore((state) => state.startFollowUpDebate);
 
   // Constraint input state (PRD: Interrupt & Inject)
   const [constraintInput, setConstraintInput] = useState('');
@@ -188,13 +225,64 @@ export function DebatePage() {
   const debateStartTime = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
+  // Track if this is a new debate or follow-up
+  const hasStartedRef = useRef(false);
+
+  // Initialize selected agents from URL param if provided
+  useEffect(() => {
+    if (agentsFromUrl && agentsFromUrl.length > 0) {
+      console.log('[DebatePage] Setting agents from URL:', agentsFromUrl);
+      setSelectedAgents(agentsFromUrl);
+    }
+  }, []);
+
+  // Load session if resuming
+  useEffect(() => {
+    if (sessionIdParam) {
+      loadSession(sessionIdParam);
+    }
+  }, [sessionIdParam, loadSession]);
+
   // Start debate when connected and query is present
   useEffect(() => {
-    if (isReady && query && !isDebating && phase === 'idle') {
+    if (isReady && query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
+      hasStartedRef.current = true;
       debateStartTime.current = Date.now();
-      startDebateSession(query, modelTier);
+      
+      // Get previous context if this is a follow-up
+      const previousContext = getPreviousTurnsContext();
+      
+      // Start a new turn in the session
+      startNewTurn(query);
+      
+      // Log the agents being sent
+      console.log('[DebatePage] Starting debate with agents:', selectedAgentsFromUrl);
+      
+      // Start the debate with context and agent selection
+      startDebateSession(query, modelTier, previousContext, selectedAgentsFromUrl);
     }
-  }, [isReady, query, modelTier, isDebating, phase, startDebateSession]);
+  }, [isReady, query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, selectedAgentsFromUrl]);
+
+  // Mark turn complete when debate ends
+  useEffect(() => {
+    if (phase === 'complete' && !isDebating) {
+      completeTurn();
+      setShowFollowUp(true); // Show follow-up input after debate completes
+    }
+  }, [phase, isDebating, completeTurn]);
+
+  // Sync agent responses to session store (throttled to prevent infinite loops)
+  const lastSyncedResponses = useRef<Record<string, string>>({});
+  useEffect(() => {
+    AGENT_IDS.forEach(agentId => {
+      const agentText = agents[agentId].text;
+      // Only update if text exists and has actually changed from last sync
+      if (agentText && agentText !== lastSyncedResponses.current[agentId]) {
+        lastSyncedResponses.current[agentId] = agentText;
+        updateTurnResponse(agentId, agentText);
+      }
+    });
+  }, [agents, updateTurnResponse]);
 
   // Update elapsed time during debate
   useEffect(() => {
@@ -239,6 +327,41 @@ export function DebatePage() {
   // Handle citation click
   const handleCitationClick = (agentId: AgentId) => {
     handleAgentClick(agentId);
+  };
+
+  // Handle follow-up question submission
+  const handleFollowUpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!followUpInput.trim() || !isReady) return;
+
+    const newQuery = followUpInput.trim();
+    setFollowUpInput('');
+    setShowFollowUp(false);
+
+    // 1. Save the current turn as completed
+    saveCurrentTurn();
+    
+    // 2. Add the follow-up question as a "YOU" node
+    addFollowUpQuestion(newQuery);
+    
+    // 3. Start a new debate round for the follow-up (in-place, no navigation)
+    startFollowUpDebate(newQuery);
+    
+    // 4. Reset the debate tracking ref so the effect will trigger
+    hasStartedRef.current = false;
+    debateStartTime.current = Date.now();
+    
+    // 5. Start a new turn in the session store
+    startNewTurn(newQuery);
+    
+    // 6. Build context from previous turns and start the WebSocket debate
+    const previousContext = getPreviousTurnsContext();
+    console.log('[DebatePage] Starting follow-up with context length:', previousContext.length);
+    startDebateSession(newQuery, modelTier, previousContext, selectedAgentsFromUrl);
+    
+    // Mark that we've started so the main effect doesn't double-trigger
+    hasStartedRef.current = true;
   };
 
   // Handle constraint injection (PRD: Interrupt & Inject)
@@ -323,7 +446,16 @@ export function DebatePage() {
               onClick={() => navigate('/')}
               className="flex items-center gap-2 text-white/70 hover:text-white transition-colors"
             >
-              <span className={`text-base font-bold tracking-widest ${designMode === 'boxy' ? 'font-mono' : ''}`}>PRISM</span>
+              <DotMatrixText
+                text="PRISM"
+                dotWidth={3}
+                dotHeight={4}
+                dotGap={1}
+                letterGap={4}
+                revealDelay={20}
+                activeColor="#ffffff"
+                inactiveColor="rgba(255,255,255,0.15)"
+              />
             </button>
             {/* Design Mode Toggle */}
             <div className="flex items-center gap-1">
@@ -351,17 +483,12 @@ export function DebatePage() {
           </div>
           {/* Right: Cerebras Branding + Connection Status */}
           <div className="flex items-center gap-4">
-            {/* Cerebras Logo + Name */}
-            <div className="flex items-center gap-2">
-              <img
-                src="/cerebras-logo.svg"
-                alt="Cerebras"
-                className="w-4 h-4 opacity-60"
-              />
-              <span className={`text-[10px] text-white/40 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                Cerebras
-              </span>
-            </div>
+            {/* Cerebras Logo */}
+            <img
+              src="/cerebras-logo-white.png"
+              alt="Cerebras"
+              className="h-6 w-auto opacity-60"
+            />
 
             {/* Connection Status */}
             <div className="flex items-center gap-2">
@@ -396,20 +523,23 @@ export function DebatePage() {
           {/* Back Navigation */}
           <div className={`p-3 ${designMode === 'boxy' ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.06]'}`}>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                resetDebate();
+                navigate('/');
+              }}
               className={`flex items-center gap-2 text-white/40 hover:text-white text-xs uppercase tracking-wider transition-colors px-2 py-2 hover:bg-white/[0.05] w-full ${designMode === 'boxy' ? 'font-mono' : 'rounded-lg'}`}
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              <span>{designMode === 'boxy' ? 'NEW QUESTION' : 'New Question'}</span>
+              <span>{designMode === 'boxy' ? 'NEW CONSULTATION' : 'New Consultation'}</span>
             </button>
           </div>
 
           {/* Agent Roster */}
           <div className="flex-1 p-3 overflow-y-auto">
             <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-3 px-2 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-              {designMode === 'boxy' ? 'AGENTS' : 'Agents'}
+              {designMode === 'boxy' ? 'YOUR CONSULTANTS' : 'Your Consultants'}
             </p>
             <div className="space-y-1">
               {AGENT_IDS.map((agentId) => {
@@ -543,7 +673,7 @@ export function DebatePage() {
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                    <span>{designMode === 'boxy' ? 'PERSPECTIVES' : 'Perspectives'}</span>
+                    <span>{designMode === 'boxy' ? 'CONSULTANT INSIGHTS' : 'Consultant Insights'}</span>
                     <span className="text-white/25">
                       ({perspectiveAgents.filter(id => agents[id].text).length}/7)
                     </span>
@@ -693,15 +823,15 @@ export function DebatePage() {
                     </div>
                     <div>
                       <span className={`text-base ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider text-[#F15A29]' : 'font-semibold text-[#F15A29]'}`}>
-                        {designMode === 'boxy' ? 'ANSWER' : 'Answer'}
+                        {designMode === 'boxy' ? 'RECOMMENDATION' : 'Recommendation'}
                       </span>
                       <p className={`text-[11px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
                         {isLoading
-                          ? (designMode === 'boxy' ? 'GATHERING PERSPECTIVES...' : 'Gathering perspectives...')
+                          ? (designMode === 'boxy' ? 'CONSULTING YOUR TEAM...' : 'Consulting your team...')
                           : isStreaming
-                            ? (designMode === 'boxy' ? 'SYNTHESIZING...' : 'Synthesizing...')
+                            ? (designMode === 'boxy' ? 'PREPARING RECOMMENDATION...' : 'Preparing recommendation...')
                             : hasAnswer
-                              ? (designMode === 'boxy' ? 'FROM 7 PERSPECTIVES' : 'From 7 perspectives')
+                              ? (designMode === 'boxy' ? 'YOUR PERSONALIZED RECOMMENDATION' : 'Your personalized recommendation')
                               : (designMode === 'boxy' ? 'WAITING...' : 'Waiting...')
                         }
                       </p>
@@ -868,16 +998,13 @@ export function DebatePage() {
             </form>
 
             {/* DEBUG: Hardcoded test to verify rendering */}
-            <div className="mt-2 px-3 py-2 bg-red-500/20 border border-red-500/50 text-red-300 text-[10px] font-mono">
-              TEST: Constraints count = {constraints.length}
-            </div>
+            {constraints.length > 0 && (
+              <div className="mt-2 px-3 py-2 bg-white/5 border border-white/10 text-white/50 text-[10px] font-mono">
+                {constraints.length} constraint{constraints.length !== 1 ? 's' : ''} added
+              </div>
+            )}
 
-            {/* Constraints count - always visible for debugging */}
-            <div className="mt-1 text-[9px] text-white/30 font-mono">
-              isReady: {isReady ? 'yes' : 'no'} | isDebating: {isDebating ? 'yes' : 'no'}
-            </div>
-
-            {/* Active Constraints Display - Always render container for debugging */}
+            {/* Active Constraints Display */}
             <div className="mt-3 flex flex-wrap gap-2" style={{ minHeight: constraints.length > 0 ? 'auto' : '0' }}>
               {constraints.map((constraint, index) => (
                 <div
@@ -888,6 +1015,52 @@ export function DebatePage() {
                 </div>
               ))}
             </div>
+
+            {/* Follow-up Question Input - Shows after debate completes */}
+            {showFollowUp && phase === 'complete' && (
+              <form onSubmit={handleFollowUpSubmit} className={`mt-4 p-3 pb-2 transition-all duration-200 ${
+                designMode === 'boxy'
+                  ? 'bg-[#1a1612] border-2 border-[#F15A29]/40'
+                  : 'backdrop-blur-xl bg-[#F15A29]/10 border border-[#F15A29]/30 rounded-2xl'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquarePlus className="w-4 h-4 text-[#F15A29]" />
+                  <span className={`text-[11px] text-[#F15A29] ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : 'font-medium'}`}>
+                    {designMode === 'boxy' ? 'ASK A FOLLOW-UP QUESTION' : 'Ask a follow-up question'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={followUpInput}
+                    onChange={(e) => setFollowUpInput(e.target.value)}
+                    placeholder={designMode === 'boxy' ? 'CONTINUE THE CONVERSATION...' : 'Continue the conversation...'}
+                    className={`flex-1 bg-transparent text-white outline-none text-sm py-2 disabled:opacity-60 ${
+                      designMode === 'boxy'
+                        ? 'placeholder-white/30 tracking-wide font-mono'
+                        : 'placeholder-white/40 font-sans'
+                    }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!followUpInput.trim() || !isReady}
+                    className={`flex items-center justify-center w-8 h-8 transition-all duration-200 ${
+                      followUpInput.trim() && isReady
+                        ? `bg-[#F15A29] text-white hover:bg-[#F15A29]/90 ${designMode === 'round' ? 'rounded-lg' : ''}`
+                        : `bg-white/10 text-white/30 cursor-not-allowed border ${designMode === 'round' ? 'rounded-lg border-white/10' : 'border-white/20'}`
+                    }`}
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className={`mt-2 text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                  {currentSession && currentSession.turns.length > 0 
+                    ? `${currentSession.turns.length} question${currentSession.turns.length !== 1 ? 's' : ''} in this consultation`
+                    : 'Your follow-up will build on the analysis above'
+                  }
+                </p>
+              </form>
+            )}
           </div>
         </main>
 
@@ -1004,16 +1177,11 @@ export function DebatePage() {
               {totalTokens} tokens
             </span>
           )}
-          <div className="flex items-center gap-2">
-            <img
-              src="/cerebras-logo.svg"
-              alt="Cerebras"
-              className="w-4 h-4 opacity-50"
-            />
-            <span className={`text-[10px] text-white/30 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-              Cerebras
-            </span>
-          </div>
+          <img
+            src="/cerebras-logo-white.png"
+            alt="Cerebras"
+            className="h-6 w-auto opacity-50"
+          />
         </div>
       </footer>
 

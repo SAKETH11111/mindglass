@@ -1,13 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { Send } from 'lucide-react'
-import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from './types/agent'
+import { Send, Clock } from 'lucide-react'
+import { AGENT_COLORS, AGENT_NAMES } from './types/agent'
 import type { AgentId } from './types/agent'
 import { DebatePage } from '@/pages/debate'
-import { AgentsPanel } from '@/components/AgentsPanel'
+import { HistorySidebar } from '@/components/HistorySidebar'
+import { AgentManagerWindow } from '@/components/AgentManagerWindow'
 import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
 import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
 import { DotMatrixText } from '@/components/DotMatrixText'
+import { useSessionStore } from '@/hooks/useSessionStore'
+import { useDebateStore } from '@/hooks/useDebateStore'
 
 // DiceBear Notionists avatar URLs for each agent
 const AGENT_AVATARS: Record<AgentId, string> = {
@@ -18,37 +21,96 @@ const AGENT_AVATARS: Record<AgentId, string> = {
   strategist: 'https://api.dicebear.com/7.x/notionists/svg?seed=planner&backgroundColor=transparent',
   finance: 'https://api.dicebear.com/7.x/notionists/svg?seed=banker&backgroundColor=transparent',
   risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=guardian&backgroundColor=transparent',
-  synthesizer: 'https://api.dicebear.com/7.x/notionists/svg?seed=wizard&backgroundColor=transparent',
+  synthesizer: 'https://api.dicebear.com/7.x/notionists/svg?seed=leader&backgroundColor=transparent',
 }
 
 function HomePage() {
   const [inputValue, setInputValue] = useState("")
   const [isFocused, setIsFocused] = useState(false)
-  const [isAgentsPanelOpen, setIsAgentsPanelOpen] = useState(false)
   const [selectedTier, setSelectedTier] = useState<ModelTier>('fast')
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [isAgentWindowOpen, setIsAgentWindowOpen] = useState(false)
+  const agentAvatarsRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
+
+  // Session management
+  const {
+    selectedAgents,
+    sessionHistory,
+    createSession,
+    loadSession,
+    loadAllSessions,
+  } = useSessionStore()
+
+  // Load sessions on mount
+  useEffect(() => {
+    loadAllSessions()
+  }, [loadAllSessions])
+
+  // Debate store reset function
+  const resetDebate = useDebateStore((state) => state.resetDebate)
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault()
     if (!inputValue.trim()) return
 
+    // Reset previous debate state before starting new one
+    resetDebate()
+
+    // Create a new session with the selected agents
+    createSession(inputValue.trim(), selectedAgents, selectedTier)
+
     // Navigate to debate page with query and selected model tier
-    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}`)
-  }, [inputValue, navigate, selectedTier])
+    // Always include agents param to ensure correct selection
+    const agentsParam = `&agents=${selectedAgents.join(',')}`
+    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}${agentsParam}`)
+  }, [inputValue, navigate, selectedTier, selectedAgents, createSession, resetDebate])
+
+  const handleSelectSession = useCallback((sessionId: string) => {
+    const session = loadSession(sessionId)
+    if (session) {
+      // Navigate to the session - use last turn's query if available, otherwise use title
+      const query = session.turns.length > 0 
+        ? session.turns[session.turns.length - 1].query 
+        : session.title;
+      // Always include agents param to ensure correct selection
+      const agentsParam = `&agents=${session.selectedAgents.join(',')}`
+      console.log('[App] Loading session:', sessionId, 'query:', query, 'agents:', session.selectedAgents);
+      navigate(`/debate?q=${encodeURIComponent(query)}&model=${session.modelTier}${agentsParam}&session=${sessionId}`)
+    } else {
+      console.error('[App] Failed to load session:', sessionId);
+    }
+  }, [loadSession, navigate])
+
+  const handleNewSession = useCallback(() => {
+    setInputValue('')
+  }, [])
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
       {/* Rainbow Matrix Shader Background */}
       <RainbowMatrixShader />
 
+      {/* History Sidebar */}
+      <HistorySidebar
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectSession={handleSelectSession}
+        onNewSession={handleNewSession}
+        designMode="boxy"
+      />
+
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-40">
+      <header className="fixed top-0 left-0 right-0 z-30">
         {/* Subtle top line accent */}
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
         <div className="px-6 py-3">
-          <div className="max-w-[1600px] mx-auto flex items-center justify-end">
-            {/* GitHub Link */}
+          <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+            {/* Left - Empty for balance */}
+            <div />
+
+            {/* Right - GitHub Link */}
             <a
               href="https://github.com"
               target="_blank"
@@ -83,15 +145,15 @@ function HomePage() {
                 inactiveColor="rgba(255,255,255,0.08)"
               />
             </div>
-            <p className="text-base max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 text-white/60 font-mono tracking-wide">
-              8 AI PERSPECTIVES ANALYZE YOUR DECISION — <span className="text-white">INSTANTLY</span>
+            <p className="text-sm max-w-lg mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 text-white/40 font-mono">
+              Get instant, multi-angle analysis on any decision
             </p>
           </div>
 
           {/* Input Card */}
           <div
             className={`
-              p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300
+              p-4 pb-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-250
               transition-all duration-200
               bg-[#111] border-2 border-white/30
               ${isFocused ? 'border-white/60 shadow-[0_0_40px_rgba(255,255,255,0.1)]' : ''}
@@ -133,56 +195,60 @@ function HomePage() {
                   <ModelSelector
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}
-                    designMode="boxy"
                   />
                 </div>
 
-                {/* Right side - agent avatars and submit */}
-                <div className="flex items-center gap-3">
-                  {/* Agent avatars - clickable to open panel */}
+                {/* Right side - agent avatars (clickable selector) and submit */}
+                <div className="flex items-center gap-3 relative">
+                  {/* Agent avatars - clickable to open window */}
                   <button
+                    ref={agentAvatarsRef}
                     type="button"
-                    onClick={() => setIsAgentsPanelOpen(true)}
-                    className="flex items-center -space-x-0.5 hover:opacity-90 transition-opacity"
+                    onClick={() => setIsAgentWindowOpen(true)}
+                    className="flex items-center -space-x-0.5 hover:opacity-90 transition-opacity group"
+                    title="Manage consultants"
                   >
-                    {AGENT_IDS.slice(0, 4).map((agent) => {
+                    {selectedAgents.slice(0, 4).map((agent) => {
                       const avatar = AGENT_AVATARS[agent]
                       const color = AGENT_COLORS[agent]
                       const name = AGENT_NAMES[agent]
 
                       return (
-                        <div key={agent} className="group relative">
+                        <div key={agent} className="relative">
                           <div
                             className="
                               w-6 h-6 overflow-hidden
                               transition-all duration-200 cursor-pointer
-                              border border-white/30 hover:z-10 hover:scale-110
+                              border border-white/30 group-hover:border-white/50
                             "
                             style={{ backgroundColor: color }}
                           >
-                            <img src={avatar} alt={name} className="w-full h-full" />
-                          </div>
-
-                          {/* Tooltip */}
-                          <div
-                            className="
-                              absolute -top-8 left-1/2 -translate-x-1/2
-                              px-2 py-1 text-[10px] font-medium
-                              bg-black/80 backdrop-blur-xl border border-white/10 text-white
-                              opacity-0 group-hover:opacity-100 transition-opacity
-                              whitespace-nowrap pointer-events-none z-20
-                            "
-                          >
-                            {name}
+                            <img src={avatar} alt={name} className="w-full h-full object-cover object-center" />
                           </div>
                         </div>
                       )
                     })}
-                    {/* +4 more indicator */}
-                    <div className="w-6 h-6 flex items-center justify-center bg-white/10 text-[9px] text-white font-medium hover:bg-white/20 transition-colors border border-white/30">
-                      +4
-                    </div>
+                    {/* Show remaining count or add indicator */}
+                    {selectedAgents.length > 4 ? (
+                      <div className="w-6 h-6 flex items-center justify-center bg-white/10 text-[9px] text-white font-medium group-hover:bg-white/20 transition-colors border border-white/30">
+                        +{selectedAgents.length - 4}
+                      </div>
+                    ) : selectedAgents.length < 8 ? (
+                      <div className="w-6 h-6 flex items-center justify-center bg-white/5 text-[9px] text-white/40 border border-dashed border-white/20 group-hover:border-white/40 transition-colors">
+                        +
+                      </div>
+                    ) : (
+                      <div className="w-6 h-6 flex items-center justify-center bg-white/10 text-[9px] text-white font-medium border border-white/30">
+                        +4
+                      </div>
+                    )}
                   </button>
+
+                  {/* Agent Manager Window */}
+                  <AgentManagerWindow
+                    isOpen={isAgentWindowOpen}
+                    onClose={() => setIsAgentWindowOpen(false)}
+                  />
 
                   {/* Submit button */}
                   <button
@@ -205,8 +271,24 @@ function HomePage() {
             </form>
           </div>
 
+          {/* History quick link (more visible than header) */}
+          <div className="flex justify-center animate-in fade-in duration-700 delay-350">
+            <button
+              onClick={() => setIsHistoryOpen(true)}
+              className="flex items-center gap-2 text-white/40 hover:text-white transition-colors font-mono text-xs uppercase tracking-wider"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>VIEW HISTORY</span>
+              {sessionHistory.length > 0 && (
+                <span className="w-5 h-5 bg-white/10 text-white/60 text-[10px] font-mono flex items-center justify-center">
+                  {sessionHistory.length > 99 ? '99+' : sessionHistory.length}
+                </span>
+              )}
+            </button>
+          </div>
+
           {/* Example prompts */}
-          <div className="flex flex-wrap justify-center gap-2 animate-in fade-in duration-700 delay-500">
+          <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-700 delay-400 max-w-xl mx-auto">
             {[
               "Is remote work better for productivity?",
               "Should my startup focus on growth or profit?",
@@ -217,10 +299,7 @@ function HomePage() {
                 key={prompt}
                 type="button"
                 onClick={() => setInputValue(prompt)}
-                className="
-                  px-4 py-2 text-sm transition-all duration-200
-                  font-mono tracking-wide bg-[#111] border border-white/20 text-white/60 hover:text-white hover:border-white/50 hover:bg-[#1a1a1a]
-                "
+                className="text-left px-3 py-2.5 text-[11px] font-mono text-white/40 hover:text-white/70 transition-colors bg-[#111] border border-white/10 hover:border-white/30"
               >
                 {prompt}
               </button>
@@ -234,24 +313,16 @@ function HomePage() {
       <footer className="fixed bottom-0 left-0 right-0 px-6 py-4">
         <div className="max-w-[1600px] mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 group cursor-default">
+            <span className="text-[11px] font-mono text-white/40 uppercase tracking-wider">Powered by</span>
             <img
-              src="/cerebras-logo.svg"
+              src="/cerebras-logo-white.png"
               alt="Cerebras"
-              className="w-6 h-6"
+              className="h-7 w-auto opacity-70 group-hover:opacity-100 transition-opacity"
             />
-            <span className="text-sm font-mono text-white/70 tracking-wide">
-              CEREBRAS
-            </span>
           </div>
         </div>
       </footer>
 
-      {/* Agents Panel Modal */}
-      <AgentsPanel
-        isOpen={isAgentsPanelOpen}
-        onClose={() => setIsAgentsPanelOpen(false)}
-        designMode="boxy"
-      />
     </div>
   )
 }

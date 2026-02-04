@@ -203,12 +203,41 @@ export function useWebSocket() {
   }, [connect, setError]);
 
   // Start a debate by sending start_debate message
-  const startDebateSession = useCallback((query: string, model?: string) => {
+  const startDebateSession = useCallback((
+    query: string, 
+    model?: string, 
+    previousContext?: string,
+    selectedAgents?: AgentId[]
+  ) => {
     // Update local state first
     startDebate(query);
-    // Send to server with model selection
-    return sendMessage({ type: 'start_debate', query, model: model || 'pro' });
+    // Send to server with model selection, context, and agent selection
+    return sendMessage({ 
+      type: 'start_debate', 
+      query, 
+      model: model || 'pro',
+      previousContext: previousContext || '',
+      selectedAgents: selectedAgents || null,
+    });
   }, [sendMessage, startDebate]);
+
+  // Start a follow-up debate WITHOUT resetting store state (for multi-turn conversations)
+  const startFollowUpSession = useCallback((
+    query: string, 
+    model?: string, 
+    previousContext?: string,
+    selectedAgents?: AgentId[]
+  ) => {
+    // DON'T call startDebate - it resets completedTurns/followUpNodes
+    // Just send the message to the server
+    return sendMessage({ 
+      type: 'start_debate', 
+      query, 
+      model: model || 'pro',
+      previousContext: previousContext || '',
+      selectedAgents: selectedAgents || null,
+    });
+  }, [sendMessage]);
 
   // Inject a constraint mid-debate (PRD: Interrupt & Inject feature)
   const injectConstraint = useCallback((constraint: string): boolean => {
@@ -216,5 +245,5 @@ export function useWebSocket() {
     return sendMessage({ type: 'inject_constraint', constraint });
   }, [sendMessage]);
 
-  return { sendMessage, isReady, retry, startDebateSession, injectConstraint };
+  return { sendMessage, isReady, retry, startDebateSession, startFollowUpSession, injectConstraint };
 }

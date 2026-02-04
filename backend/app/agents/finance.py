@@ -62,24 +62,35 @@ class FinanceAgent(LLMAgent):
 
             iterator = iter(stream)
             final_usage = None
+            final_time_info = None
 
             while True:
                 chunk = await loop.run_in_executor(None, get_next_chunk, iterator)
                 if chunk is None:
                     break
 
-                # Capture usage data from final chunk
+                # Capture usage and timing data from final chunk
                 if hasattr(chunk, 'usage') and chunk.usage:
                     final_usage = chunk.usage
+                if hasattr(chunk, 'time_info') and chunk.time_info:
+                    final_time_info = chunk.time_info
 
                 if chunk.choices[0].delta.content:
                     token = chunk.choices[0].delta.content
                     token_count += 1
                     yield self._create_token_message(token)
 
-            # Calculate tokens per second
-            elapsed_time = time.time() - start_time
-            tokens_per_second = token_count / elapsed_time if elapsed_time > 0 else 0
+            # Calculate tokens per second using API's completion_time for accurate measurement
+            completion_time = None
+            if final_time_info and hasattr(final_time_info, 'completion_time'):
+                completion_time = final_time_info.completion_time
+            
+            if completion_time and completion_time > 0:
+                completion_tokens_count = final_usage.completion_tokens if final_usage else token_count
+                tokens_per_second = completion_tokens_count / completion_time
+            else:
+                elapsed_time = time.time() - start_time
+                tokens_per_second = token_count / elapsed_time if elapsed_time > 0 else 0
 
             # Send metrics message with token usage from final chunk
             prompt_tokens = final_usage.prompt_tokens if final_usage else 0

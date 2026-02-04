@@ -9,6 +9,7 @@ This creates ACTUAL debate with back-and-forth:
   Round 5 (FINAL):      Synthesizer creates consensus from the full debate
 
 Each round sees ALL prior arguments, creating real debate dynamics.
+Supports custom agent selection and follow-up questions with context.
 """
 
 import asyncio
@@ -18,6 +19,9 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from app.agents import AGENT_REGISTRY
+
+# All available agent IDs
+ALL_AGENT_IDS = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk', 'synthesizer']
 
 
 @dataclass
@@ -77,6 +81,8 @@ class DebateOrchestrator:
     - Challenge/Defense rounds create actual back-and-forth
     - Agents are prompted to directly address each other by name
     - Creates visible "debate tension" in the UI
+    - Supports follow-up questions with previous session context
+    - Supports custom agent selection
     """
 
     def __init__(self):
@@ -92,6 +98,10 @@ class DebateOrchestrator:
         self.user_constraints: List[str] = []
         self._interrupt_event: Optional[asyncio.Event] = None
         self._current_round_num: Optional[int] = None
+        # Previous session context for follow-up questions
+        self.previous_context: str = ""
+        # Selected agents for this debate
+        self.selected_agents: List[str] = ALL_AGENT_IDS
 
     def inject_constraint(self, constraint: str):
         """Inject a user constraint that all subsequent agents will see."""
@@ -102,13 +112,15 @@ class DebateOrchestrator:
             print(f"[{datetime.now().isoformat()}] Restart requested for round {self._current_round_num}")
             self._interrupt_event.set()
 
-    async def stream_debate(self, query: str, model: str = "pro") -> AsyncGenerator[Dict[str, Any], None]:
+    async def stream_debate(self, query: str, model: str = "pro", previous_context: str = "", selected_agents: List[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a multi-round debate where agents respond to each other.
 
         Args:
             query: The user's query to debate
             model: The model tier to use ('fast' or 'pro')
+            previous_context: Context from previous turns in the same session
+            selected_agents: Which agents to include (defaults to all)
 
         Yields:
             Dict containing agent_token, agent_done, round_start, or metrics messages
@@ -119,22 +131,35 @@ class DebateOrchestrator:
         self.user_constraints = []
         self._interrupt_event = asyncio.Event()
         self._current_round_num = None
+        self.previous_context = previous_context or ""
+        self.selected_agents = selected_agents if selected_agents else ALL_AGENT_IDS
+        
+        # Always include synthesizer
+        if 'synthesizer' not in self.selected_agents:
+            self.selected_agents.append('synthesizer')
         
         # Map tier to actual Cerebras model
         model_map = {
             "fast": "llama3.1-8b",
-            "pro": "llama-3.3-70b",
+            "pro": "qwen3-32b",  # Qwen3 with reasoning support
         }
         model_id = model_map.get(model, "llama3.1-8b")
-        use_reasoning = False  # Extended thinking not yet supported
+        # Enable reasoning for Qwen3 model (uses <think>...</think> tags)
+        use_reasoning = model_id == "qwen3-32b"
         
         print(f"[{datetime.now().isoformat()}] Debate starting - model: {model_id}, tier: {model}")
+        print(f"[{datetime.now().isoformat()}] Selected agents: {self.selected_agents}")
         print(f"[{datetime.now().isoformat()}] Query: {query[:100]}...")
+        if self.previous_context:
+            print(f"[{datetime.now().isoformat()}] Has previous context: {len(self.previous_context)} chars")
 
+        # Build customized debate rounds based on selected agents
+        debate_rounds = self._build_debate_rounds()
+        
         # Run each debate round (with restart support)
         round_index = 0
-        while round_index < len(DEBATE_ROUNDS):
-            round_config = DEBATE_ROUNDS[round_index]
+        while round_index < len(debate_rounds):
+            round_config = debate_rounds[round_index]
             self._current_round_num = round_config.round_num
             if self._interrupt_event.is_set():
                 self._interrupt_event.clear()
@@ -199,6 +224,71 @@ class DebateOrchestrator:
             "timestamp": int(datetime.now().timestamp() * 1000)
         }
 
+    def _build_debate_rounds(self) -> List[DebateRound]:
+        """
+        Build customized debate rounds based on selected agents.
+        Filters out rounds where no selected agents participate.
+        Always ends with synthesizer round.
+        """
+        selected = set(self.selected_agents)
+        customized_rounds = []
+        round_num = 1
+        
+        # Opening: Analyst + Optimist
+        opening_agents = [a for a in ["analyst", "optimist"] if a in selected]
+        if opening_agents:
+            customized_rounds.append(DebateRound(
+                round_num=round_num,
+                name="Opening Arguments",
+                agents=opening_agents,
+                context_prompt="You are presenting your OPENING POSITION on this topic. Be clear and take a stance."
+            ))
+            round_num += 1
+        
+        # Challenge: Critic + Pessimist
+        challenge_agents = [a for a in ["critic", "pessimist"] if a in selected]
+        if challenge_agents and opening_agents:  # Only if there were opening arguments to challenge
+            customized_rounds.append(DebateRound(
+                round_num=round_num,
+                name="Challenge",
+                agents=challenge_agents,
+                context_prompt="You are CHALLENGING the opening arguments. Directly address the previous speakers' specific claims. Quote them and explain why they're wrong or incomplete."
+            ))
+            round_num += 1
+            
+            # Defense: Only if there was a challenge and opening agents are selected
+            defense_agents = [a for a in ["analyst", "optimist"] if a in selected]
+            if defense_agents:
+                customized_rounds.append(DebateRound(
+                    round_num=round_num,
+                    name="Defense & Rebuttal",
+                    agents=defense_agents,
+                    context_prompt="You are DEFENDING your position against the challengers' attacks. Address their specific objections. Acknowledge valid points but explain why your core argument still holds."
+                ))
+                round_num += 1
+        
+        # Expert Analysis: Strategist + Finance + Risk
+        expert_agents = [a for a in ["strategist", "finance", "risk"] if a in selected]
+        if expert_agents:
+            customized_rounds.append(DebateRound(
+                round_num=round_num,
+                name="Expert Analysis",
+                agents=expert_agents,
+                context_prompt="You've watched the debate unfold. Now provide your EXPERT PERSPECTIVE. Reference the back-and-forth between the other agents. Who had the stronger arguments? What did they miss?"
+            ))
+            round_num += 1
+        
+        # Final Verdict: Synthesizer (always)
+        if "synthesizer" in selected:
+            customized_rounds.append(DebateRound(
+                round_num=round_num,
+                name="Final Verdict",
+                agents=["synthesizer"],
+                context_prompt="The debate is complete. Synthesize ALL rounds into a final verdict. Note who 'won' each exchange, what was resolved, and what remains contested. Provide a clear recommendation."
+            ))
+        
+        return customized_rounds
+
     def _build_debate_context(self, current_round: DebateRound) -> str:
         """
         Build the full debate context up to this point.
@@ -210,8 +300,9 @@ class DebateOrchestrator:
         if current_round.round_num > 1:
             for round_num in range(1, current_round.round_num):
                 if round_num in self.blackboard:
-                    round_config = DEBATE_ROUNDS[round_num - 1]
-                    context_parts.append(f"=== ROUND {round_num}: {round_config.name.upper()} ===")
+                    # Get round name from blackboard entries
+                    round_agents = list(self.blackboard[round_num].keys())
+                    context_parts.append(f"=== ROUND {round_num} ===")
                     
                     for agent_id, text in self.blackboard[round_num].items():
                         agent_name = self.agents[agent_id].name
@@ -245,11 +336,25 @@ class DebateOrchestrator:
         return text.strip()
 
     def _create_round_prompt(self, original_query: str, round_config: DebateRound, debate_context: str) -> str:
-        """Create the full prompt for this round including debate context."""
-        parts = [
-            f"ORIGINAL QUESTION: {original_query}",
+        """Create the full prompt for this round including debate context and previous session context."""
+        parts = []
+        
+        # Add previous session context if this is a follow-up question
+        if self.previous_context:
+            parts.extend([
+                "=== PREVIOUS CONSULTATION CONTEXT ===",
+                "The user is continuing a consultation session. Here is what was previously discussed:",
+                self.previous_context,
+                "=== END OF PREVIOUS CONTEXT ===",
+                "",
+                "Now the user has a FOLLOW-UP QUESTION. Consider the above context when responding.",
+                "",
+            ])
+        
+        parts.extend([
+            f"CURRENT QUESTION: {original_query}",
             "",
-        ]
+        ])
 
         if self.user_constraints:
             parts.extend([

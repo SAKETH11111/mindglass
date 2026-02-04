@@ -16,11 +16,13 @@ import { AGENT_COLORS, type AgentId } from '@/types/agent';
 interface TimelineBarProps {
   elapsedMs: number;
   designMode?: 'boxy' | 'round';
+  currentTps?: number;
 }
 
 export function TimelineBar({ 
   elapsedMs,
-  designMode = 'boxy' 
+  designMode = 'boxy',
+  currentTps = 0
 }: TimelineBarProps) {
   const checkpoints = useDebateStore((state) => state.checkpoints);
   const activeCheckpointIndex = useDebateStore((state) => state.activeCheckpointIndex);
@@ -90,14 +92,14 @@ export function TimelineBar({
       )}
 
       {/* Main timeline */}
-      <div className="h-16 px-6 flex items-center gap-4">
+      <div className="h-12 px-6 flex items-center gap-4">
         {/* Current time */}
         <span className={`text-xs text-white/40 tabular-nums w-10 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
           {formatTime(elapsedMs)}
         </span>
 
         {/* Timeline track */}
-        <div className="flex-1 relative h-10 flex items-center">
+        <div className="flex-1 relative h-8 flex items-center">
           {/* Background track */}
           <div className={`absolute inset-x-0 h-1 bg-white/[0.06] ${designMode === 'round' ? 'rounded-full' : ''}`} />
           
@@ -160,17 +162,21 @@ export function TimelineBar({
           {formatTime(maxDurationMs)}
         </span>
 
-        {/* Cerebras Branding */}
-        <div className="flex items-center gap-2 ml-2">
-          <img
-            src="/cerebras-logo.svg"
-            alt="Cerebras"
-            className="w-4 h-4 opacity-50"
-          />
-          <span className={`text-[10px] text-white/30 uppercase tracking-wider ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-            {designMode === 'boxy' ? 'CEREBRAS' : 'Cerebras'}
+        {/* TPS Counter */}
+        <div className="flex items-center gap-2 px-2 py-1 bg-white/[0.03] border border-white/5">
+          <div className={`w-1.5 h-1.5 rounded-full ${currentTps > 0 ? 'bg-[#F15A29] animate-pulse' : 'bg-white/20'}`} />
+          <span className={`text-[10px] font-mono font-medium tabular-nums ${currentTps > 0 ? 'text-[#F15A29]' : 'text-white/30'}`}>
+            {currentTps > 0 ? `${Math.round(currentTps).toLocaleString()}` : '--'}
           </span>
+          <span className="text-[9px] text-white/40 font-mono">t/s</span>
         </div>
+
+        {/* Cerebras Branding */}
+        <img
+          src="/cerebras-logo-white.png"
+          alt="Cerebras"
+          className="h-5 w-auto opacity-50"
+        />
       </div>
 
       {/* Checkpoint legend */}

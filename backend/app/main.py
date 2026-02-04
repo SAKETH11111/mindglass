@@ -62,10 +62,10 @@ async def websocket_endpoint(websocket: WebSocket):
     stream_task: asyncio.Task | None = None
     stream_id: str | None = None
 
-    async def run_stream(query: str, model: str):
+    async def run_stream(query: str, model: str, previous_context: str = "", selected_agents: list = None):
         try:
             print(f"[{datetime.now().isoformat()}] Stream start id={stream_id} model={model}")
-            async for token in orchestrator.stream_debate(query, model):
+            async for token in orchestrator.stream_debate(query, model, previous_context, selected_agents):
                 await websocket.send_json(token)
             await websocket.send_json(create_debate_complete())
             print(f"[{datetime.now().isoformat()}] Debate complete")
@@ -90,13 +90,17 @@ async def websocket_endpoint(websocket: WebSocket):
             if message.get("type") == "start_debate":
                 query = message.get("query", "").strip()
                 model = message.get("model", "pro")  # Default to 'pro' tier
+                previous_context = message.get("previousContext", "")  # Context from previous turns
+                selected_agents = message.get("selectedAgents", None)  # Which agents to include
 
                 # Validate query is not empty
                 if not query:
                     await websocket.send_json(create_error("Query cannot be empty"))
                     continue
 
-                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model}")
+                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'}")
+                if previous_context:
+                    print(f"[{datetime.now().isoformat()}] Previous context length: {len(previous_context)} chars")
 
                 # Cancel any existing stream
                 if stream_task and not stream_task.done():
@@ -106,7 +110,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Start streaming in the background so we can handle injects
                 stream_id = str(uuid.uuid4())
-                stream_task = asyncio.create_task(run_stream(query, model))
+                stream_task = asyncio.create_task(run_stream(query, model, previous_context, selected_agents))
 
             elif message.get("type") == "inject_constraint":
                 # PRD Feature: Interrupt & Inject constraint mid-debate

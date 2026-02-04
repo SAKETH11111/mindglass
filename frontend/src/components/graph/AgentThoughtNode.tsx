@@ -25,6 +25,9 @@ export interface AgentThoughtNodeData extends Record<string, unknown> {
   tokensPerSecond?: number;
   designMode?: 'boxy' | 'round';
   isUserProxy?: boolean;
+  isFollowUp?: boolean;
+  isCompletedTurn?: boolean;
+  turnIndex?: number;
 }
 
 // Parse <think>...</think> tags and return thinking + answer separately
@@ -55,10 +58,13 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
   const isStreaming = (data as AgentThoughtNodeData).isStreaming;
   const designMode = (data as AgentThoughtNodeData).designMode ?? 'boxy';
   const isUserProxy = (data as AgentThoughtNodeData).isUserProxy ?? false;
+  const isFollowUp = (data as AgentThoughtNodeData).isFollowUp ?? false;
+  // isCompletedTurn can be used for faded styling of past turns
+  void (data as AgentThoughtNodeData).isCompletedTurn;
 
-  // UserProxy gets special gray color
-  const color = isUserProxy ? '#888888' : AGENT_COLORS[agentId];
-  const name = isUserProxy ? 'You' : AGENT_NAMES[agentId];
+  // UserProxy/FollowUp gets special colors
+  const color = isUserProxy || isFollowUp ? '#A855F7' : AGENT_COLORS[agentId]; // Purple for user
+  const name = isUserProxy || isFollowUp ? 'You' : AGENT_NAMES[agentId];
   
   // Parse thinking and answer
   const { thinking, answer, isThinkingComplete } = parseThinkTags(text);
@@ -108,7 +114,7 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
         style={{ backgroundColor: designMode === 'boxy' ? `${color}15` : `${color}15` }}
       >
         <div
-          className={`w-7 h-7 overflow-hidden flex-shrink-0 flex items-center justify-center ${designMode === 'round' ? 'rounded-full' : ''}`}
+          className={`w-7 h-7 overflow-hidden flex-shrink-0 flex items-center justify-center bg-cover bg-center ${designMode === 'round' ? 'rounded-full' : ''}`}
           style={{ backgroundColor: color }}
         >
           {isUserProxy ? (
@@ -120,7 +126,7 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
             <img
               src={getAvatarUrl(agentId)}
               alt={name}
-              className="w-full h-full"
+              className="w-full h-full object-cover object-center"
               draggable={false}
             />
           )}

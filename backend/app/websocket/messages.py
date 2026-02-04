@@ -3,7 +3,7 @@ WebSocket Message Protocol for MindGlass
 Defines typed message structures for client-server communication
 """
 
-from typing import TypedDict, Optional, Literal
+from typing import TypedDict, Optional, Literal, List
 from datetime import datetime
 
 
@@ -13,6 +13,8 @@ class StartDebateMessage(TypedDict):
     """Message to start a debate with a query"""
     type: Literal["start_debate"]
     query: str
+    previousContext: Optional[str]  # Context from previous turns in the session
+    selectedAgents: Optional[List[str]]  # Which agents to include (defaults to all)
 
 
 # Outbound messages (server → client)

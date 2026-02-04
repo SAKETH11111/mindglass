@@ -7,25 +7,27 @@
  * - Round 3 (Defense):      Analyst + Optimist (same nodes, defending)
  * - Round 4 (Expert):       Strategist + Finance + Risk (third row)
  * - Round 5 (Final):        Synthesizer (bottom center)
+ * - [YOU node]:             User's follow-up question (if any)
+ * - [Next turn]:            Repeats pattern below YOU node
  * 
  * Edges show debate relationships:
  * - Red: Critic/Pessimist attacking Analyst/Optimist
  * - Green: Support relationships
  * - Blue: Dependencies
+ * - Purple: Follow-up connections
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
-  useNodesState,
-  useEdgesState,
   type Node,
   type Edge,
   type NodeTypes,
   type EdgeTypes,
   type OnSelectionChangeFunc,
+  type ReactFlowInstance,
   BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -43,6 +45,10 @@ const nodeTypes: NodeTypes = {
 const edgeTypes: EdgeTypes = {
   semantic: SemanticEdge,
 };
+
+const FIT_VIEW_OPTIONS = { padding: 0.2, maxZoom: 0.9 } as const;
+const DEFAULT_EDGE_OPTIONS = { type: 'semantic' } as const;
+const PRO_OPTIONS = { hideAttribution: true } as const;
 
 interface DebateCanvasProps {
   onNodeSelect?: (nodeId: string | null) => void;
@@ -66,6 +72,7 @@ const ROUND_1_AGENTS: AgentId[] = ['analyst', 'optimist'];
 const ROUND_2_AGENTS: AgentId[] = ['critic', 'pessimist'];
 const ROUND_4_AGENTS: AgentId[] = ['strategist', 'finance', 'risk'];
 const ROUND_5_AGENTS: AgentId[] = ['synthesizer'];
+const ALL_AGENTS: AgentId[] = [...ROUND_1_AGENTS, ...ROUND_2_AGENTS, ...ROUND_4_AGENTS, ...ROUND_5_AGENTS];
 
 // Visual layout positions
 const getDebatePosition = (
@@ -120,20 +127,111 @@ const getDebatePosition = (
 
 export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvasProps) {
   const agents = useDebateStore((state) => state.agents);
-  const phase = useDebateStore((state) => state.phase);
   const constraints = useDebateStore((state) => state.constraints);
+  const completedTurns = useDebateStore((state) => state.completedTurns);
+  const followUpNodes = useDebateStore((state) => state.followUpNodes);
+  const currentTurnIndex = useDebateStore((state) => state.currentTurnIndex);
   
-  const ALL_AGENTS: AgentId[] = [...ROUND_1_AGENTS, ...ROUND_2_AGENTS, ...ROUND_4_AGENTS, ...ROUND_5_AGENTS];
+  type RFNode = Node<AgentThoughtNodeData>;
+  type RFEdge = Edge<SemanticEdgeData>;
+  type RFInstance = ReactFlowInstance<RFNode, RFEdge>;
+
+  const reactFlowInstanceRef = useRef<RFInstance | null>(null);
+  const hasUserInteractedRef = useRef(false);
+  const lastAutoFitNodeCountRef = useRef(0);
+  const lastAutoFitConstraintCountRef = useRef(0);
+
+  const handleMoveStart = useCallback((event: unknown) => {
+    if (event) hasUserInteractedRef.current = true;
+  }, []);
+
+  const handleInit = useCallback((instance: RFInstance) => {
+    reactFlowInstanceRef.current = instance;
+  }, []);
   
   // Generate nodes
-  const generateNodes = useCallback((): Node<AgentThoughtNodeData>[] => {
-    const activeAgents = ALL_AGENTS.filter(id => agents[id].text || agents[id].isStreaming);
+  const nodes = useMemo((): Node<AgentThoughtNodeData>[] => {
     const nodes: Node<AgentThoughtNodeData>[] = [];
+    const canvasWidth = 1400;
+    const centerX = canvasWidth / 2;
     
-    // Add agent nodes
+    // Height of one complete debate turn (4 rows of agents)
+    const TURN_HEIGHT = 4 * (CARD_HEIGHT + VERTICAL_GAP);
+    // Extra space for YOU node between turns
+    const YOU_NODE_HEIGHT = CARD_HEIGHT + VERTICAL_GAP * 2;
+    
+    // Calculate Y offset for a given turn
+    const getTurnYOffset = (turnIndex: number) => {
+      if (turnIndex === 0) return 0;
+      // Each previous turn takes TURN_HEIGHT + YOU_NODE_HEIGHT
+      return turnIndex * (TURN_HEIGHT + YOU_NODE_HEIGHT);
+    };
+    
+    // Helper to get position with turn offset
+    const getPositionForTurn = (agentId: AgentId, turnIndex: number) => {
+      const basePos = getDebatePosition(agentId, canvasWidth);
+      return {
+        x: basePos.x,
+        y: basePos.y + getTurnYOffset(turnIndex),
+      };
+    };
+    
+    // ═══ Add nodes for COMPLETED turns (faded/collapsed) ═══
+    completedTurns.forEach((turn, turnIdx) => {
+      // For completed turns, only show synthesizer as a summary card
+      const synthText = turn.agentTexts.synthesizer;
+      if (synthText) {
+        const position = getPositionForTurn('synthesizer', turnIdx);
+        nodes.push({
+          id: `node-turn${turnIdx}-synthesizer`,
+          type: 'agentThought',
+          position,
+          data: {
+            agentId: 'synthesizer',
+            text: synthText,
+            isStreaming: false,
+            phase: 5,
+            tokensPerSecond: 0,
+            designMode,
+            isCompletedTurn: true,
+            turnIndex: turnIdx,
+          },
+          draggable: false,
+        });
+      }
+    });
+    
+    // ═══ Add YOU (follow-up) nodes ═══
+    followUpNodes.forEach((followUp, idx) => {
+      const turnIdx = idx; // Follow-up leads into the next turn
+      const yOffset = getTurnYOffset(turnIdx) + TURN_HEIGHT + VERTICAL_GAP;
+      
+      nodes.push({
+        id: followUp.id,
+        type: 'agentThought',
+        position: {
+          x: centerX - CARD_WIDTH / 2,
+          y: yOffset,
+        },
+        data: {
+          agentId: 'userproxy' as AgentId,
+          text: followUp.text,
+          isStreaming: false,
+          phase: 0,
+          tokensPerSecond: 0,
+          designMode,
+          isUserProxy: true,
+          isFollowUp: true,
+        },
+        draggable: false,
+      });
+    });
+    
+    // ═══ Add nodes for CURRENT turn ═══
+    const activeAgents = ALL_AGENTS.filter(id => agents[id].text || agents[id].isStreaming);
     activeAgents.forEach((agentId) => {
       const agent = agents[agentId];
-      const position = getDebatePosition(agentId);
+      const position = getPositionForTurn(agentId, currentTurnIndex);
       
       // Determine round for visual styling
       let nodeRound = 1;
@@ -153,22 +251,21 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
           tokensPerSecond: agent.tokensPerSecond,
           designMode,
         },
-        draggable: true,
+        draggable: false,
       });
     });
 
-    // Add UserProxy node if constraints exist
+    // Add UserProxy node if constraints exist (for current turn)
     if (constraints.length > 0) {
-      const canvasWidth = 1400;
-      const centerX = canvasWidth / 2;
       const latestConstraint = constraints[constraints.length - 1];
+      const yOffset = getTurnYOffset(currentTurnIndex);
       // Position UserProxy to the right side of the canvas
       nodes.push({
         id: 'node-userproxy',
         type: 'agentThought',
         position: {
           x: centerX + CARD_WIDTH + HORIZONTAL_GAP * 2,
-          y: 40 + CARD_HEIGHT + VERTICAL_GAP / 2,
+          y: 40 + CARD_HEIGHT + VERTICAL_GAP / 2 + yOffset,
         },
         data: {
           agentId: 'userproxy' as AgentId,
@@ -179,12 +276,12 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
           designMode,
           isUserProxy: true,
         },
-        draggable: true,
+        draggable: false,
       });
     }
 
     return nodes;
-  }, [agents, designMode, constraints]);
+  }, [agents, constraints, designMode, completedTurns, followUpNodes, currentTurnIndex]);
   
   // Generate edges showing semantic debate relationships (per PRD)
   // - Red "refutes" edges: Challengers attacking openers
@@ -198,7 +295,7 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
   //   Row 4: Synthesizer
   //
   // Edges connect via shortest path (closest handles)
-  const generateEdges = useCallback((): Edge<SemanticEdgeData>[] => {
+  const edges = useMemo((): Edge<SemanticEdgeData>[] => {
     const edges: Edge<SemanticEdgeData>[] = [];
     
     // ═══ RED REFUTES EDGES: Challengers (Row 2) attack Openers (Row 1) ═══
@@ -280,18 +377,80 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
       }
     }
     
+    // ═══ FOLLOW-UP EDGES: Connect previous synthesizer → YOU → new turn ═══
+    followUpNodes.forEach((followUp, idx) => {
+      // Connect completed turn's synthesizer to the YOU node
+      const prevTurnSynthId = `node-turn${idx}-synthesizer`;
+      const hasPrevSynth = completedTurns[idx]?.agentTexts?.synthesizer;
+      
+      if (hasPrevSynth) {
+        edges.push({
+          id: `edge-synth-to-followup-${idx}`,
+          source: prevTurnSynthId,
+          sourceHandle: 'bottom',
+          target: followUp.id,
+          targetHandle: 'top-target',
+          type: 'semantic',
+          data: { edgeType: 'depends', label: 'leads to' },
+        });
+      }
+      
+      // If this is the current turn, connect YOU node to the first agents
+      if (idx === currentTurnIndex - 1) {
+        // Connect to analyst and optimist (opening agents)
+        if (agents.analyst.text || agents.analyst.isStreaming) {
+          edges.push({
+            id: `edge-followup-to-analyst-${idx}`,
+            source: followUp.id,
+            sourceHandle: 'bottom',
+            target: 'node-analyst',
+            targetHandle: 'top-target',
+            type: 'semantic',
+            data: { edgeType: 'depends' },
+          });
+        }
+        if (agents.optimist.text || agents.optimist.isStreaming) {
+          edges.push({
+            id: `edge-followup-to-optimist-${idx}`,
+            source: followUp.id,
+            sourceHandle: 'bottom',
+            target: 'node-optimist',
+            targetHandle: 'top-target',
+            type: 'semantic',
+            data: { edgeType: 'depends' },
+          });
+        }
+      }
+    });
+    
     return edges;
-  }, [agents, constraints]);
+  }, [agents, constraints, completedTurns, followUpNodes, currentTurnIndex]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<AgentThoughtNodeData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge<SemanticEdgeData>>([]);
-
+  // Reset auto-fit between debates
   useEffect(() => {
-    const newNodes = generateNodes();
-    const newEdges = generateEdges();
-    setNodes(newNodes);
-    setEdges(newEdges);
-  }, [agents, phase, designMode, generateNodes, generateEdges, setNodes, setEdges]);
+    if (nodes.length === 0 && constraints.length === 0) {
+      hasUserInteractedRef.current = false;
+      lastAutoFitNodeCountRef.current = 0;
+      lastAutoFitConstraintCountRef.current = 0;
+    }
+  }, [nodes.length, constraints.length]);
+
+  // Auto-fit when new cards or constraints appear until user interacts
+  useEffect(() => {
+    if (hasUserInteractedRef.current) return;
+    if (nodes.length === 0) return;
+
+    const nodeCountChanged = nodes.length !== lastAutoFitNodeCountRef.current;
+    const constraintCountChanged = constraints.length !== lastAutoFitConstraintCountRef.current;
+
+    if (nodeCountChanged || constraintCountChanged) {
+      lastAutoFitNodeCountRef.current = nodes.length;
+      lastAutoFitConstraintCountRef.current = constraints.length;
+      requestAnimationFrame(() => {
+        reactFlowInstanceRef.current?.fitView({ padding: 0.2, maxZoom: 0.9, duration: 350 });
+      });
+    }
+  }, [nodes.length, constraints.length]);
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(({ nodes: selectedNodes }) => {
     if (selectedNodes.length > 0) {
@@ -306,17 +465,19 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
+        onMoveStart={handleMoveStart}
+        onInit={handleInit}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        nodesDraggable={false}
+        nodesConnectable={false}
         fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 0.9 }}
+        fitViewOptions={FIT_VIEW_OPTIONS}
         minZoom={0.2}
         maxZoom={1.5}
-        defaultEdgeOptions={{ type: 'semantic' }}
-        proOptions={{ hideAttribution: true }}
+        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+        proOptions={PRO_OPTIONS}
         className="bg-transparent"
       >
         <Background
