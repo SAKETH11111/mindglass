@@ -1,10 +1,12 @@
 import { X, Check, Users } from 'lucide-react';
-import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from '@/types/agent';
+import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry } from '@/types/agent';
+import type { IndustryType } from '@/components/IndustrySelector';
 
 import { useSessionStore } from '@/hooks/useSessionStore';
 
-// DiceBear Notionists avatar URLs
+// DiceBear Notionists avatar URLs (including industry-specific)
 const AGENT_AVATARS: Record<string, string> = {
+  // Base agents
   analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
   optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
   pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
@@ -13,10 +15,29 @@ const AGENT_AVATARS: Record<string, string> = {
   finance: 'https://api.dicebear.com/7.x/notionists/svg?seed=banker&backgroundColor=transparent',
   risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=guardian&backgroundColor=transparent',
   synthesizer: 'https://api.dicebear.com/7.x/notionists/svg?seed=wizard&backgroundColor=transparent',
+  // SaaS industry agents
+  saas_metrics: 'https://api.dicebear.com/7.x/notionists/svg?seed=metrics&backgroundColor=transparent',
+  saas_growth: 'https://api.dicebear.com/7.x/notionists/svg?seed=rocket&backgroundColor=transparent',
+  // E-commerce industry agents
+  ecommerce_conversion: 'https://api.dicebear.com/7.x/notionists/svg?seed=funnel&backgroundColor=transparent',
+  ecommerce_operations: 'https://api.dicebear.com/7.x/notionists/svg?seed=warehouse&backgroundColor=transparent',
+  // Fintech industry agents
+  fintech_compliance: 'https://api.dicebear.com/7.x/notionists/svg?seed=shield&backgroundColor=transparent',
+  fintech_risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=fraud&backgroundColor=transparent',
+  // Healthcare industry agents
+  healthcare_clinical: 'https://api.dicebear.com/7.x/notionists/svg?seed=doctor&backgroundColor=transparent',
+  healthcare_regulatory: 'https://api.dicebear.com/7.x/notionists/svg?seed=hipaa&backgroundColor=transparent',
+  // Manufacturing industry agents
+  manufacturing_operations: 'https://api.dicebear.com/7.x/notionists/svg?seed=factory&backgroundColor=transparent',
+  manufacturing_quality: 'https://api.dicebear.com/7.x/notionists/svg?seed=quality&backgroundColor=transparent',
+  // Consulting industry agents
+  consulting_client: 'https://api.dicebear.com/7.x/notionists/svg?seed=handshake&backgroundColor=transparent',
+  consulting_delivery: 'https://api.dicebear.com/7.x/notionists/svg?seed=presentation&backgroundColor=transparent',
 };
 
-// Short descriptions
+// Short descriptions (including industry-specific)
 const AGENT_SHORT_DESC: Record<string, string> = {
+  // Base agents
   analyst: 'Data & pattern analysis',
   optimist: 'Opportunities & potential',
   pessimist: 'Risks & downsides',
@@ -25,19 +46,41 @@ const AGENT_SHORT_DESC: Record<string, string> = {
   finance: 'Financial analysis',
   risk: 'Risk assessment',
   synthesizer: 'Final synthesis',
+  // SaaS industry agents
+  saas_metrics: 'SaaS KPIs & unit economics',
+  saas_growth: 'PLG & growth strategy',
+  // E-commerce industry agents
+  ecommerce_conversion: 'Conversion optimization',
+  ecommerce_operations: 'Fulfillment & logistics',
+  // Fintech industry agents
+  fintech_compliance: 'Regulatory compliance',
+  fintech_risk: 'Fraud & risk modeling',
+  // Healthcare industry agents
+  healthcare_clinical: 'Clinical validation',
+  healthcare_regulatory: 'FDA/HIPAA compliance',
+  // Manufacturing industry agents
+  manufacturing_operations: 'Operations & supply chain',
+  manufacturing_quality: 'Quality & Six Sigma',
+  // Consulting industry agents
+  consulting_client: 'Client relationships',
+  consulting_delivery: 'Engagement delivery',
 };
 
 interface AgentManagerWindowProps {
   isOpen: boolean;
   onClose: () => void;
+  industry?: IndustryType;
 }
 
-export function AgentManagerWindow({ isOpen, onClose }: AgentManagerWindowProps) {
+export function AgentManagerWindow({ isOpen, onClose, industry = 'any' }: AgentManagerWindowProps) {
   const {
     selectedAgents,
     toggleAgent,
     selectAllAgents,
   } = useSessionStore();
+
+  // Get agents for the current industry
+  const industryAgents = getAgentIdsForIndustry(industry);
 
   if (!isOpen) return null;
 
@@ -73,19 +116,19 @@ export function AgentManagerWindow({ isOpen, onClose }: AgentManagerWindowProps)
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-[#0d0d0d]">
           <span className="text-[10px] text-white/50 font-mono uppercase">
-            {selectedAgents.length}/8 ACTIVE
+            {selectedAgents.filter(a => industryAgents.includes(a)).length}/{industryAgents.length} ACTIVE
           </span>
           <button
             onClick={selectAllAgents}
             className="text-[10px] text-[#F15A29]/80 hover:text-[#F15A29] transition-colors font-mono uppercase"
           >
-            {selectedAgents.length === 8 ? 'ALL SELECTED' : 'SELECT ALL'}
+            {selectedAgents.length === industryAgents.length ? 'ALL SELECTED' : 'SELECT ALL'}
           </button>
         </div>
 
         {/* Agent Grid */}
         <div className="p-4 grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
-          {AGENT_IDS.map((agentId) => {
+          {industryAgents.map((agentId) => {
             const isSelected = selectedAgents.includes(agentId);
             const isSynthesizer = agentId === 'synthesizer';
             const color = AGENT_COLORS[agentId];

@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Send, Clock, Settings } from 'lucide-react'
-import { AGENT_COLORS, AGENT_NAMES } from './types/agent'
+import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry } from './types/agent'
 import { DebatePage } from '@/pages/debate'
 import { HistorySidebar } from '@/components/HistorySidebar'
 import { AgentManagerWindow } from '@/components/AgentManagerWindow'
@@ -14,8 +14,9 @@ import { useDebateStore } from '@/hooks/useDebateStore'
 import { ApiKeyPrompt } from '@/components/ApiKeyPrompt'
 import { SettingsPanel } from '@/components/SettingsPanel'
 
-// DiceBear Notionists avatar URLs for each agent
+// DiceBear Notionists avatar URLs for each agent (including industry-specific)
 const AGENT_AVATARS: Record<string, string> = {
+  // Base agents
   analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
   optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
   pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
@@ -24,6 +25,24 @@ const AGENT_AVATARS: Record<string, string> = {
   finance: 'https://api.dicebear.com/7.x/notionists/svg?seed=banker&backgroundColor=transparent',
   risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=guardian&backgroundColor=transparent',
   synthesizer: 'https://api.dicebear.com/7.x/notionists/svg?seed=leader&backgroundColor=transparent',
+  // SaaS industry agents
+  saas_metrics: 'https://api.dicebear.com/7.x/notionists/svg?seed=metrics&backgroundColor=transparent',
+  saas_growth: 'https://api.dicebear.com/7.x/notionists/svg?seed=rocket&backgroundColor=transparent',
+  // E-commerce industry agents
+  ecommerce_conversion: 'https://api.dicebear.com/7.x/notionists/svg?seed=funnel&backgroundColor=transparent',
+  ecommerce_operations: 'https://api.dicebear.com/7.x/notionists/svg?seed=warehouse&backgroundColor=transparent',
+  // Fintech industry agents
+  fintech_compliance: 'https://api.dicebear.com/7.x/notionists/svg?seed=shield&backgroundColor=transparent',
+  fintech_risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=fraud&backgroundColor=transparent',
+  // Healthcare industry agents
+  healthcare_clinical: 'https://api.dicebear.com/7.x/notionists/svg?seed=doctor&backgroundColor=transparent',
+  healthcare_regulatory: 'https://api.dicebear.com/7.x/notionists/svg?seed=hipaa&backgroundColor=transparent',
+  // Manufacturing industry agents
+  manufacturing_operations: 'https://api.dicebear.com/7.x/notionists/svg?seed=factory&backgroundColor=transparent',
+  manufacturing_quality: 'https://api.dicebear.com/7.x/notionists/svg?seed=quality&backgroundColor=transparent',
+  // Consulting industry agents
+  consulting_client: 'https://api.dicebear.com/7.x/notionists/svg?seed=handshake&backgroundColor=transparent',
+  consulting_delivery: 'https://api.dicebear.com/7.x/notionists/svg?seed=presentation&backgroundColor=transparent',
 }
 
 function HomePage() {
@@ -40,11 +59,24 @@ function HomePage() {
   // Session management
   const {
     selectedAgents,
+    setSelectedAgents,
     sessionHistory,
     createSession,
     loadSession,
     loadAllSessions,
   } = useSessionStore()
+
+  // Update selected agents when industry changes
+  const handleIndustryChange = useCallback((industry: IndustryType) => {
+    setSelectedIndustry(industry)
+    const industryAgents = getAgentIdsForIndustry(industry)
+    setSelectedAgents(industryAgents)
+  }, [setSelectedAgents])
+
+  // Get visible agents for the current industry (for avatar display)
+  const visibleAgents = useMemo(() => {
+    return getAgentIdsForIndustry(selectedIndustry)
+  }, [selectedIndustry])
 
   // Load sessions on mount
   useEffect(() => {
@@ -198,7 +230,7 @@ function HomePage() {
                   {/* Industry Selector */}
                   <IndustrySelector
                     selectedIndustry={selectedIndustry}
-                    onIndustryChange={setSelectedIndustry}
+                    onIndustryChange={handleIndustryChange}
                   />
 
                   {/* Model Selector */}
@@ -218,7 +250,7 @@ function HomePage() {
                     className="flex items-center -space-x-0.5 hover:opacity-90 transition-opacity group"
                     title="Manage consultants"
                   >
-                    {selectedAgents.slice(0, 4).map((agent) => {
+                    {visibleAgents.slice(0, 4).map((agent) => {
                       const avatar = AGENT_AVATARS[agent]
                       const color = AGENT_COLORS[agent]
                       const name = AGENT_NAMES[agent]
@@ -258,6 +290,7 @@ function HomePage() {
                   <AgentManagerWindow
                     isOpen={isAgentWindowOpen}
                     onClose={() => setIsAgentWindowOpen(false)}
+                    industry={selectedIndustry}
                   />
 
                   {/* Submit button */}
