@@ -10,5 +10,8 @@
       "main": true,
       "master": true
     }
+  },
+  "triggers": {
+    "gitPush": true
   }
 }
