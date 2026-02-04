@@ -220,7 +220,7 @@ export function DebatePage() {
   const [isInjecting, setIsInjecting] = useState(false);
 
   // WebSocket connection
-  const { isReady, startDebateSession, injectConstraint } = useWebSocket();
+  const { isReady, startDebateSession, injectConstraint } = useWebSocket({ autoConnect: true });
 
   // User constraint state from store
   const constraints = useDebateStore((state) => state.constraints);

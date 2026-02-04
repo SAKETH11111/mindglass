@@ -8,7 +8,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
-export function useWebSocket() {
+export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } = {}) {
   const ws = useRef<WebSocket | null>(null);
   const retryCount = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -216,6 +216,9 @@ export function useWebSocket() {
   }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
 
   useEffect(() => {
+    if (autoConnect) {
+      connect();
+    }
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
@@ -224,7 +227,7 @@ export function useWebSocket() {
         ws.current.close();
       }
     };
-  }, []);
+  }, [autoConnect, connect]);
 
   const sendMessage = useCallback((message: object) => {
     if (ws.current?.readyState === WebSocket.OPEN) {

@@ -125,7 +125,7 @@ export function DebatePage() {
   }, [effectiveSelectedAgents]);
 
   // WebSocket
-  const { isReady, startDebateSession, startFollowUpSession, injectConstraint } = useWebSocket();
+  const { isReady, startDebateSession, startFollowUpSession, injectConstraint } = useWebSocket({ autoConnect: true });
 
   // Constraint input state
   const [constraintInput, setConstraintInput] = useState('');
