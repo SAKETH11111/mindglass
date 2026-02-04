@@ -11,6 +11,7 @@ import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
 import { DotMatrixText } from '@/components/DotMatrixText'
 import { useSessionStore } from '@/hooks/useSessionStore'
 import { useDebateStore } from '@/hooks/useDebateStore'
+import { ApiKeyModal } from '@/components/ApiKeyModal'
 
 // DiceBear Notionists avatar URLs for each agent
 const AGENT_AVATARS: Record<AgentId, string> = {
@@ -322,6 +323,9 @@ function HomePage() {
           </div>
         </div>
       </footer>
+
+      {/* API Key Modal */}
+      <ApiKeyModal />
 
     </div>
   )

@@ -40,6 +40,9 @@ export interface FollowUpNode {
   turnIndex: number; // Which turn this leads into
 }
 
+// Simulated TPS for demo (random between 1800-2500)
+let tpsInterval: ReturnType<typeof setInterval> | null = null;
+
 interface DebateState {
   // Connection
   connectionState: ConnectionState;
@@ -85,6 +88,10 @@ interface DebateState {
   followUpNodes: FollowUpNode[]; // User's follow-up questions
   currentTurnIndex: number; // 0 = first turn, 1 = after first follow-up, etc.
 
+  // Custom API key for fallback when backend has issues
+  customApiKey: string | null;
+  showApiKeyModal: boolean;
+
   // Actions
   setConnectionState: (state: ConnectionState) => void;
   startDebate: (query: string) => void;
@@ -126,6 +133,14 @@ interface DebateState {
   addFollowUpQuestion: (question: string) => void; // Add a "YOU" node for follow-up
   startFollowUpDebate: (query: string) => void; // Start a new debate round for follow-up
   clearConversation: () => void; // Reset all turns and follow-ups
+
+  // Custom API key actions
+  setCustomApiKey: (key: string | null) => void;
+  setShowApiKeyModal: (show: boolean) => void;
+
+  // Simulated TPS for demo
+  startSimulatedTps: () => void;
+  stopSimulatedTps: () => void;
 }
 
 const createInitialAgents = (): Record<AgentId, AgentState> => {
@@ -175,6 +190,9 @@ const initialState = {
   completedTurns: [] as DebateTurnSnapshot[],
   followUpNodes: [] as FollowUpNode[],
   currentTurnIndex: 0,
+  // Custom API key
+  customApiKey: null as string | null,
+  showApiKeyModal: false,
 };
 
 export const useDebateStore = create<DebateState>()(
@@ -505,5 +523,26 @@ export const useDebateStore = create<DebateState>()(
         nodes: [],
         edges: [],
       }),
+
+    // Custom API key actions
+    setCustomApiKey: (key) => set({ customApiKey: key }),
+    setShowApiKeyModal: (show) => set({ showApiKeyModal: show }),
+
+    // Simulated TPS for demo (random between 1800-2500)
+    startSimulatedTps: () => {
+      if (tpsInterval) clearInterval(tpsInterval);
+      tpsInterval = setInterval(() => {
+        // Random TPS between 1800 and 2500
+        const simulatedTps = Math.floor(Math.random() * (2500 - 1800 + 1)) + 1800;
+        set({ tokensPerSecond: simulatedTps });
+      }, 500);
+    },
+    stopSimulatedTps: () => {
+      if (tpsInterval) {
+        clearInterval(tpsInterval);
+        tpsInterval = null;
+      }
+      set({ tokensPerSecond: 0 });
+    },
   }))
 );

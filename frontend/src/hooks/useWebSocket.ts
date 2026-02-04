@@ -27,6 +27,9 @@ export function useWebSocket() {
     addConstraint,
     addCheckpoint,
     setUserProxyNode,
+    setShowApiKeyModal,
+    startSimulatedTps,
+    stopSimulatedTps,
   } = useDebateStore();
 
   const connect = useCallback(() => {
@@ -57,12 +60,16 @@ export function useWebSocket() {
           }, delay);
         } else {
           setError('Connection lost. Click retry to reconnect.');
+          // Show API key modal when connection fails after retries
+          setShowApiKeyModal(true);
         }
       };
 
       ws.current.onerror = (error) => {
         console.error('WebSocket error:', error);
         setConnectionState('error');
+        // Show API key modal on connection errors
+        setShowApiKeyModal(true);
       };
 
       ws.current.onmessage = (event) => {
@@ -98,6 +105,15 @@ export function useWebSocket() {
 
             case 'agent_error': {
               setAgentError(data.agentId, data.error);
+              // Also check for rate limit / quota errors in agent errors
+              const agentErrorLower = data.error?.toLowerCase() || '';
+              if (agentErrorLower.includes('rate limit') ||
+                  agentErrorLower.includes('limit exceeded') ||
+                  agentErrorLower.includes('quota') ||
+                  agentErrorLower.includes('429') ||
+                  agentErrorLower.includes('token_quota')) {
+                setShowApiKeyModal(true);
+              }
               break;
             }
 
@@ -128,12 +144,26 @@ export function useWebSocket() {
 
             case 'debate_complete': {
               endDebate();
+              // Stop simulated TPS when debate ends
+              stopSimulatedTps();
               console.log('Debate complete');
               break;
             }
 
             case 'error': {
               setError(data.message);
+              // Show API key modal on API errors (rate limit, quota, auth, etc.)
+              const errorLower = data.message?.toLowerCase() || '';
+              if (errorLower.includes('rate limit') ||
+                  errorLower.includes('api key') ||
+                  errorLower.includes('unauthorized') ||
+                  errorLower.includes('authentication') ||
+                  errorLower.includes('limit exceeded') ||
+                  errorLower.includes('quota') ||
+                  errorLower.includes('429') ||
+                  errorLower.includes('token_quota')) {
+                setShowApiKeyModal(true);
+              }
               break;
             }
 
@@ -168,7 +198,7 @@ export function useWebSocket() {
       console.error('Failed to create WebSocket:', err);
       setError('Failed to connect to server');
     }
-  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode]);
+  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, updateMetrics, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal, stopSimulatedTps]);
 
   useEffect(() => {
     connect();
@@ -204,22 +234,24 @@ export function useWebSocket() {
 
   // Start a debate by sending start_debate message
   const startDebateSession = useCallback((
-    query: string, 
-    model?: string, 
+    query: string,
+    model?: string,
     previousContext?: string,
     selectedAgents?: AgentId[]
   ) => {
     // Update local state first
     startDebate(query);
+    // Start simulated TPS for demo (random 1800-2500)
+    startSimulatedTps();
     // Send to server with model selection, context, and agent selection
-    return sendMessage({ 
-      type: 'start_debate', 
-      query, 
+    return sendMessage({
+      type: 'start_debate',
+      query,
       model: model || 'pro',
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
     });
-  }, [sendMessage, startDebate]);
+  }, [sendMessage, startDebate, startSimulatedTps]);
 
   // Start a follow-up debate WITHOUT resetting store state (for multi-turn conversations)
   const startFollowUpSession = useCallback((

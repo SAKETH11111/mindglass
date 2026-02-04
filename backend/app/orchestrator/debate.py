@@ -141,11 +141,11 @@ class DebateOrchestrator:
         # Map tier to actual Cerebras model
         model_map = {
             "fast": "llama3.1-8b",
-            "pro": "qwen3-32b",  # Qwen3 with reasoning support
+            "pro": "gpt-oss-120b",  # GPT-OSS 120B for pro tier
         }
         model_id = model_map.get(model, "llama3.1-8b")
-        # Enable reasoning for Qwen3 model (uses <think>...</think> tags)
-        use_reasoning = model_id == "qwen3-32b"
+        # Disable reasoning for GPT-OSS (no <think> tags)
+        use_reasoning = False
         
         print(f"[{datetime.now().isoformat()}] Debate starting - model: {model_id}, tier: {model}")
         print(f"[{datetime.now().isoformat()}] Selected agents: {self.selected_agents}")

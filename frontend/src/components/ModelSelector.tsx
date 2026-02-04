@@ -18,7 +18,7 @@ const MODEL_TIERS: Record<ModelTier, ModelConfig> = {
   pro: {
     tier: 'pro',
     modelId: 'gpt-oss-120b',
-    modelName: 'GPT-OSS 120B (~3000 tok/s)',
+    modelName: 'GPT-OSS 120B (~2000 tok/s)',
   },
 }
 
