@@ -21,6 +21,29 @@ interface AgentMetricsPayload {
   completionTime: number;
 }
 
+export interface BenchmarkReport {
+  e2eMs: number;
+  firstTokenMs: number | null;
+  rounds: Record<string, { name: string; agents: string[]; durationMs: number }>;
+  agents: Record<
+    string,
+    {
+      round: number;
+      model: string;
+      ttftMs: number | null;
+      avgItlMs: number | null;
+      p50ItlMs: number | null;
+      p95ItlMs: number | null;
+      chunks: number;
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+      completionTimeSec?: number;
+      tokensPerSecond?: number;
+    }
+  >;
+}
+
 // Checkpoint for timeline time-travel
 export interface Checkpoint {
   id: string;
@@ -75,6 +98,7 @@ interface DebateState {
   // Metrics
   tokensPerSecond: number;
   totalTokens: number;
+  benchmarkReport: BenchmarkReport | null;
 
   // Error state
   error: string | null;
@@ -111,6 +135,7 @@ interface DebateState {
   setAgentDone: (agentId: string) => void;
   setAgentError: (agentId: string, error: string) => void;
   updateMetrics: (tokensPerSecond: number, totalTokens: number) => void;
+  setBenchmarkReport: (report: BenchmarkReport | null) => void;
   endDebate: () => void;
   resetDebate: () => void;
   setError: (error: string | null) => void;
@@ -192,6 +217,7 @@ const initialState = {
   // Metrics
   tokensPerSecond: 0,
   totalTokens: 0,
+  benchmarkReport: null as BenchmarkReport | null,
   error: null,
   nodes: [] as GraphNode[],
   edges: [] as GraphEdge[],
@@ -226,6 +252,7 @@ export const useDebateStore = create<DebateState>()(
         currentIndustry: industry || null,
         tokensPerSecond: 0,
         totalTokens: 0,
+        benchmarkReport: null,
         error: null,
         nodes: [],
         edges: [],
@@ -394,6 +421,8 @@ export const useDebateStore = create<DebateState>()(
       })),
 
     updateMetrics: (tokensPerSecond, totalTokens) => set({ tokensPerSecond, totalTokens }),
+
+    setBenchmarkReport: (benchmarkReport) => set({ benchmarkReport }),
 
     endDebate: () =>
       set((state) => {
@@ -591,6 +620,7 @@ export const useDebateStore = create<DebateState>()(
         agents: createInitialAgents(),
         tokensPerSecond: 0,
         totalTokens: 0,
+        benchmarkReport: null,
         error: null,
         constraints: [],
         userProxyNode: null,

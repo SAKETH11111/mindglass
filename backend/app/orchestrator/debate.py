@@ -104,6 +104,33 @@ class DebateOrchestrator:
         self.selected_agents: List[str] = ALL_AGENT_IDS
         # Industry context for tailored advice
         self.industry: str = ""
+        # Benchmarking (populated per debate)
+        self._bench_first_token_at: Optional[float] = None
+        self._bench_rounds: Dict[int, Dict[str, Any]] = {}
+        self._bench_agents: Dict[str, Dict[str, Any]] = {}
+
+    def _reset_benchmarks(self) -> None:
+        self._bench_first_token_at = None
+        self._bench_rounds = {}
+        self._bench_agents = {}
+
+    def _is_retryable_error(self, error_text: str) -> bool:
+        if not error_text:
+            return False
+        lower = error_text.lower()
+        triggers = [
+            "rate limit",
+            "limit exceeded",
+            "quota",
+            "429",
+            "timeout",
+            "timed out",
+            "deadline",
+            "overloaded",
+            "temporarily unavailable",
+            "service unavailable",
+        ]
+        return any(trigger in lower for trigger in triggers)
     
     def _initialize_agents(self, industry: str = "", api_key_override: str | None = None):
         """Initialize agents based on industry context."""
@@ -149,6 +176,7 @@ class DebateOrchestrator:
         self.token_count = 0
         self.blackboard = {}
         self.user_constraints = []
+        self._reset_benchmarks()
         self._interrupt_event = asyncio.Event()
         self._current_round_num = None
         self.previous_context = previous_context or ""
@@ -246,7 +274,13 @@ class DebateOrchestrator:
             
             # Run agents for this round
             try:
-                async for msg in self._run_round(round_config, enriched_query, model_id, use_reasoning):
+                async for msg in self._run_round(
+                    round_config,
+                    enriched_query,
+                    model_id,
+                    use_reasoning,
+                    fallback_model_id="llama3.1-8b",
+                ):
                     yield msg
             except RoundRestartRequested:
                 # Clear any partial outputs for this round and retry
@@ -269,6 +303,12 @@ class DebateOrchestrator:
             "totalTokens": self.token_count,
             "totalTime": round(elapsed, 2),
             "avgTokensPerSecond": round(tps),
+            "benchmark": {
+                "e2eMs": int(round(elapsed * 1000)),
+                "firstTokenMs": int(round((self._bench_first_token_at - self.start_time) * 1000)) if self._bench_first_token_at else None,
+                "rounds": self._bench_rounds,
+                "agents": self._bench_agents,
+            },
             "timestamp": int(datetime.now().timestamp() * 1000)
         }
 
@@ -480,9 +520,11 @@ class DebateOrchestrator:
         round_config: DebateRound,
         enriched_query: str, 
         model_id: str,
-        use_reasoning: bool
+        use_reasoning: bool,
+        fallback_model_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Run all agents for a round in parallel, streaming their responses."""
+        round_wall_start = time.time()
         queue: asyncio.Queue = asyncio.Queue()
         running_tasks: list[asyncio.Task] = []
         agent_buffers: Dict[str, List[str]] = {aid: [] for aid in round_config.agents}
@@ -490,6 +532,9 @@ class DebateOrchestrator:
         agent_start_times: Dict[str, float] = {}
         agent_first_token_times: Dict[str, float] = {}
         agent_last_token_times: Dict[str, float] = {}
+        agent_itl_samples: Dict[str, List[float]] = {aid: [] for aid in round_config.agents}
+        agent_api_metrics: Dict[str, Dict[str, Any]] = {}
+        agent_model_used: Dict[str, str] = {}
         completed_agents: set[str] = set()
         last_status_log = time.time()
         
@@ -500,32 +545,50 @@ class DebateOrchestrator:
             """Stream tokens from a single agent into the queue."""
             try:
                 agent_start_times[agent_id] = time.time()
+                agent_model_used[agent_id] = model_to_use
+
+                async def run_with_model(active_model: str) -> Optional[str]:
+                    """Returns error text if we should retry/fail, otherwise None."""
+                    sent_any = False
+                    async for token in agent.stream_response(
+                        enriched_query,
+                        model_override=active_model,
+                        use_reasoning=use_reasoning,
+                    ):
+                        # If the agent immediately yields an error token, treat it as retryable/fatal
+                        if token.get("type") == "agent_token" and isinstance(token.get("content"), str):
+                            if not sent_any and token["content"].startswith("[Error:"):
+                                return token["content"]
+                            sent_any = True
+                        await queue.put(token)
+                    return None
+
                 print(
                     f"[{datetime.now().isoformat()}] Agent start: {agent_id} "
                     f"(round {round_config.round_num}, model={model_to_use})"
                 )
-                async for token in agent.stream_response(enriched_query, model_override=model_to_use, use_reasoning=use_reasoning):
-                    if token["type"] == "agent_token":
-                        agent_buffers[agent_id].append(token["content"])
-                        agent_token_counts[agent_id] += 1
-                        now = time.time()
-                        if agent_id not in agent_first_token_times:
-                            agent_first_token_times[agent_id] = now
-                            ttft = now - agent_start_times.get(agent_id, now)
-                            print(
-                                f"[{datetime.now().isoformat()}] Agent first token: {agent_id} "
-                                f"ttft={ttft:.2f}s"
-                            )
-                        else:
-                            last = agent_last_token_times.get(agent_id, now)
-                            gap = now - last
-                            if gap >= 5:
-                                print(
-                                    f"[{datetime.now().isoformat()}] Agent token gap: {agent_id} "
-                                    f"gap={gap:.2f}s"
-                                )
-                        agent_last_token_times[agent_id] = now
-                    await queue.put(token)
+                error_text = await run_with_model(model_to_use)
+                if error_text and fallback_model_id and model_to_use != fallback_model_id and self._is_retryable_error(error_text):
+                    agent_model_used[agent_id] = fallback_model_id
+                    print(
+                        f"[{datetime.now().isoformat()}] Agent retry: {agent_id} "
+                        f"model={model_to_use} -> {fallback_model_id}"
+                    )
+                    error_text = await run_with_model(fallback_model_id)
+
+                if error_text:
+                    error_msg = error_text.replace("[Error:", "").replace("]", "").strip()
+                    await queue.put({
+                        "type": "agent_error",
+                        "agentId": agent_id,
+                        "error": error_msg or "Unknown error",
+                        "timestamp": int(datetime.now().timestamp() * 1000)
+                    })
+                    await queue.put({
+                        "type": "agent_done",
+                        "agentId": agent_id,
+                        "timestamp": int(datetime.now().timestamp() * 1000)
+                    })
             except Exception as e:
                 print(f"[{datetime.now().isoformat()}] Agent error {agent_id}: {e}")
                 await queue.put({
@@ -573,6 +636,38 @@ class DebateOrchestrator:
                     # Save to blackboard for next round
                     if agent_id in agent_buffers:
                         self.blackboard[round_config.round_num][agent_id] = "".join(agent_buffers[agent_id])
+                        # Record per-agent benchmark
+                        started = agent_start_times.get(agent_id)
+                        first = agent_first_token_times.get(agent_id)
+                        gaps = agent_itl_samples.get(agent_id, [])
+
+                        def percentile(values: List[float], pct: float) -> Optional[float]:
+                            if not values:
+                                return None
+                            xs = sorted(values)
+                            idx = int(round((len(xs) - 1) * pct))
+                            return xs[max(0, min(idx, len(xs) - 1))]
+
+                        ttft_ms = int(round((first - started) * 1000)) if started and first else None
+                        avg_itl_ms = int(round((sum(gaps) / len(gaps)) * 1000)) if gaps else None
+                        p50_itl_ms = int(round(percentile(gaps, 0.50) * 1000)) if gaps else None
+                        p95_itl_ms = int(round(percentile(gaps, 0.95) * 1000)) if gaps else None
+
+                        api = agent_api_metrics.get(agent_id, {})
+                        self._bench_agents[agent_id] = {
+                            "round": round_config.round_num,
+                            "model": agent_model_used.get(agent_id, model_id),
+                            "ttftMs": ttft_ms,
+                            "avgItlMs": avg_itl_ms,
+                            "p50ItlMs": p50_itl_ms,
+                            "p95ItlMs": p95_itl_ms,
+                            "chunks": agent_token_counts.get(agent_id, 0),
+                            "promptTokens": api.get("promptTokens"),
+                            "completionTokens": api.get("completionTokens"),
+                            "totalTokens": api.get("totalTokens"),
+                            "completionTimeSec": api.get("completionTime"),
+                            "tokensPerSecond": api.get("tokensPerSecond"),
+                        }
                     elapsed = None
                     if agent_id in agent_start_times:
                         elapsed = time.time() - agent_start_times[agent_id]
@@ -587,8 +682,36 @@ class DebateOrchestrator:
                     yield token
                 elif token["type"] == "agent_error":
                     yield token
+                elif token["type"] == "agent_metrics":
+                    # Keep API-provided usage + timing for benchmark report
+                    agent_id = token.get("agentId")
+                    if agent_id:
+                        agent_api_metrics[agent_id] = {
+                            "promptTokens": token.get("promptTokens"),
+                            "completionTokens": token.get("completionTokens"),
+                            "totalTokens": token.get("totalTokens"),
+                            "completionTime": token.get("completionTime"),
+                            "tokensPerSecond": token.get("tokensPerSecond"),
+                        }
+                    yield token
                 else:
                     if token["type"] == "agent_token":
+                        agent_id = token.get("agentId")
+                        content = token.get("content")
+                        if agent_id and isinstance(content, str) and not content.startswith("[Error:"):
+                            now = time.time()
+                            if agent_id not in agent_first_token_times:
+                                agent_first_token_times[agent_id] = now
+                                if self._bench_first_token_at is None:
+                                    self._bench_first_token_at = now
+                            else:
+                                last = agent_last_token_times.get(agent_id)
+                                if last is not None:
+                                    agent_itl_samples.setdefault(agent_id, []).append(now - last)
+                            agent_last_token_times[agent_id] = now
+
+                            agent_buffers[agent_id].append(content)
+                            agent_token_counts[agent_id] += 1
                         self.token_count += 1
                     yield token
 
@@ -640,3 +763,11 @@ class DebateOrchestrator:
         # Wait for all tasks
         if running_tasks:
             await asyncio.gather(*running_tasks, return_exceptions=True)
+
+        # Record round benchmark
+        duration_ms = int(round((time.time() - round_wall_start) * 1000))
+        self._bench_rounds[round_config.round_num] = {
+            "name": round_config.name,
+            "agents": round_config.agents,
+            "durationMs": duration_ms,
+        }

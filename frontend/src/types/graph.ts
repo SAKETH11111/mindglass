@@ -32,8 +32,8 @@ export const EDGE_COLORS: Record<EdgeType, string> = {
 } as const;
 
 export const EDGE_STYLES: Record<EdgeType, { strokeWidth: number; dashArray?: string }> = {
-  supports: { strokeWidth: 2 },
-  refutes: { strokeWidth: 2 },
-  depends: { strokeWidth: 1.5, dashArray: '5,5' },
+  supports: { strokeWidth: 3 },
+  refutes: { strokeWidth: 3 },
+  depends: { strokeWidth: 2, dashArray: '5,5' },
   constraint: { strokeWidth: 2, dashArray: '3,3' },
 } as const;

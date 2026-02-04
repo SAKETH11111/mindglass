@@ -20,7 +20,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
-  Background,
   Controls,
   type Node,
   type Edge,
@@ -28,7 +27,6 @@ import {
   type EdgeTypes,
   type OnSelectionChangeFunc,
   type ReactFlowInstance,
-  BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -473,7 +471,15 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
   }, [onNodeSelect]);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full wafer-grid relative overflow-hidden">
+      {/* Subtle wafer-scale glow/vignette (keeps the canvas from feeling flat) */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(700px 500px at 55% 35%, rgba(241,90,41,0.08), transparent 60%), radial-gradient(900px 700px at 40% 70%, rgba(255,255,255,0.04), transparent 55%)',
+        }}
+      />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -490,14 +496,8 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
         maxZoom={1.5}
         defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         proOptions={PRO_OPTIONS}
-        className="bg-transparent"
+        className="bg-transparent relative z-10"
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1}
-          color="rgba(255,255,255,0.05)"
-        />
         <Controls 
           className="!bg-[#1a1a1a] !border-white/10 !rounded-lg [&_button]:!bg-[#1a1a1a] [&_button]:!border-white/10 [&_button]:!text-white/60 [&_button:hover]:!bg-[#252525]"
           showInteractive={false}

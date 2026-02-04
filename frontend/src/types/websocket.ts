@@ -58,6 +58,31 @@ export interface MetricsMessage {
 export interface DebateCompleteMessage {
   type: 'debate_complete';
   timestamp: number;
+  totalTokens?: number;
+  totalTime?: number;
+  avgTokensPerSecond?: number;
+  benchmark?: {
+    e2eMs: number;
+    firstTokenMs: number | null;
+    rounds: Record<string, { name: string; agents: string[]; durationMs: number }>;
+    agents: Record<
+      string,
+      {
+        round: number;
+        model: string;
+        ttftMs: number | null;
+        avgItlMs: number | null;
+        p50ItlMs: number | null;
+        p95ItlMs: number | null;
+        chunks: number;
+        promptTokens?: number;
+        completionTokens?: number;
+        totalTokens?: number;
+        completionTimeSec?: number;
+        tokensPerSecond?: number;
+      }
+    >;
+  };
 }
 
 export interface PhaseStartMessage {

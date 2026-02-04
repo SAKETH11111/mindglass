@@ -12,6 +12,7 @@
 import { useMemo } from 'react';
 import { useDebateStore, type Checkpoint } from '@/hooks/useDebateStore';
 import { AGENT_COLORS, type AgentId } from '@/types/agent';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface TimelineBarProps {
   elapsedMs: number;
@@ -28,6 +29,7 @@ export function TimelineBar({
   const activeCheckpointIndex = useDebateStore((state) => state.activeCheckpointIndex);
   const debateStartTime = useDebateStore((state) => state.debateStartTime);
   const globalTps = useDebateStore((state) => state.tokensPerSecond);
+  const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
   const jumpToCheckpoint = useDebateStore((state) => state.jumpToCheckpoint);
 
   // Use prop TPS if available (from agent metrics), otherwise fall back to global simulated TPS
@@ -167,13 +169,30 @@ export function TimelineBar({
         </span>
 
         {/* TPS Counter */}
-        <div className="flex items-center gap-2 px-2 py-1 bg-white/[0.03] border border-white/5">
-          <div className={`w-1.5 h-1.5 rounded-full ${currentTps > 0 ? 'bg-[#F15A29] animate-pulse' : 'bg-white/20'}`} />
-          <span className={`text-[10px] font-mono font-medium tabular-nums ${currentTps > 0 ? 'text-[#F15A29]' : 'text-white/30'}`}>
-            {currentTps > 0 ? `${Math.round(currentTps).toLocaleString()}` : '--'}
-          </span>
-          <span className="text-[9px] text-white/40 font-mono">t/s</span>
-        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 px-2 py-1 bg-white/[0.03] border border-white/5 cursor-help">
+                <div className={`w-1.5 h-1.5 rounded-full ${currentTps > 0 ? 'bg-[#F15A29] animate-pulse' : 'bg-white/20'}`} />
+                <span className={`text-[10px] font-mono font-medium tabular-nums ${currentTps > 0 ? 'text-[#F15A29]' : 'text-white/30'}`}>
+                  {currentTps > 0 ? `${Math.round(currentTps).toLocaleString()}` : '--'}
+                </span>
+                <span className="text-[9px] text-white/40 font-mono">t/s</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs bg-[#0a0a0a] border border-white/10 text-white">
+              <p className="text-[11px] font-mono text-white/80">
+                Real throughput, aggregated across agents as they finish.
+              </p>
+              <p className="text-[10px] font-mono text-white/50 mt-1">
+                Computed from Cerebras usage: completion tokens / completion time.
+              </p>
+              <p className="text-[10px] font-mono text-white/50 mt-1">
+                Open <span className="text-white/70">BENCH</span> for TTFT, ITL, and per-agent breakdown.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {/* Cerebras Branding */}
         <img
@@ -183,7 +202,7 @@ export function TimelineBar({
         />
       </div>
 
-      {/* Cerebras Speed Callout */}
+      {/* Cerebras Benchmark Summary (factual, no synthetic GPU baseline) */}
       <div className={`h-8 px-6 flex items-center justify-between border-t ${designMode === 'boxy' ? 'border-white/5' : 'border-white/[0.03]'}`}>
         <div className="flex items-center gap-4">
           {checkpoints.length > 0 && (
@@ -192,23 +211,22 @@ export function TimelineBar({
             </span>
           )}
         </div>
-        
-        {/* Speed comparison - dynamic Xx faster calculation */}
-        {(elapsedMs > 1000) && (() => {
-          const elapsedSec = Math.ceil(elapsedMs / 1000);
-          const gpuBaselineSec = 120; // Traditional GPU inference baseline for 8 agents
-          const speedupX = Math.round(gpuBaselineSec / elapsedSec);
-          return (
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] text-[#F15A29] font-bold ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
-                ⚡ {speedupX}x {designMode === 'boxy' ? 'FASTER' : 'faster'}
-              </span>
-              <span className={`text-[9px] text-white/30 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                ({elapsedSec}s vs ~{gpuBaselineSec}s {designMode === 'boxy' ? 'ON TRADITIONAL GPUS' : 'on traditional GPUs'})
-              </span>
-            </div>
-          );
-        })()}
+
+        {benchmarkReport ? (
+          <div className="flex items-center gap-2 text-[10px] font-mono">
+            <span className="text-white/35">E2E</span>
+            <span className="text-white/70">{(benchmarkReport.e2eMs / 1000).toFixed(2)}s</span>
+            <span className="text-white/20">•</span>
+            <span className="text-white/35">TTFT</span>
+            <span className="text-white/70">
+              {benchmarkReport.firstTokenMs !== null ? `${benchmarkReport.firstTokenMs}ms` : '--'}
+            </span>
+          </div>
+        ) : (
+          <div className="text-[10px] font-mono text-white/30">
+            Benchmark appears when the run completes.
+          </div>
+        )}
       </div>
     </div>
   );

@@ -17,6 +17,24 @@ import { AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
 const getAvatarUrl = (agentId: AgentId) =>
   `https://api.dicebear.com/7.x/notionists/svg?seed=${agentId}&backgroundColor=transparent`;
 
+function WaferSpinner({ active }: { active: boolean }) {
+  const color = '#F15A29';
+  return (
+    <svg
+      className={`w-3 h-3 ${active ? 'animate-spin' : ''}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" stroke={color} strokeWidth="2" opacity="0.25" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <path d="M6 12h12" stroke={color} strokeWidth="1" opacity="0.18" />
+      <path d="M12 6v12" stroke={color} strokeWidth="1" opacity="0.18" />
+      <path d="M7.2 7.2l9.6 9.6" stroke={color} strokeWidth="1" opacity="0.12" />
+    </svg>
+  );
+}
+
 export interface AgentThoughtNodeData extends Record<string, unknown> {
   agentId: AgentId;
   text: string;
@@ -56,6 +74,7 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
   const agentId = (data as AgentThoughtNodeData).agentId;
   const text = (data as AgentThoughtNodeData).text;
   const isStreaming = (data as AgentThoughtNodeData).isStreaming;
+  const tokensPerSecond = (data as AgentThoughtNodeData).tokensPerSecond ?? 0;
   const designMode = (data as AgentThoughtNodeData).designMode ?? 'boxy';
   const isUserProxy = (data as AgentThoughtNodeData).isUserProxy ?? false;
   const isFollowUp = (data as AgentThoughtNodeData).isFollowUp ?? false;
@@ -137,6 +156,18 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
 
         {/* Status indicators */}
         <div className="ml-auto flex items-center gap-2">
+          {!isUserProxy && !isFollowUp && (
+            <div className="opacity-90">
+              <WaferSpinner active={isStreaming} />
+            </div>
+          )}
+
+          {!isUserProxy && !isFollowUp && tokensPerSecond > 0 && (
+            <span className="text-[9px] font-mono text-[#F15A29] tabular-nums">
+              {Math.round(tokensPerSecond).toLocaleString()} <span className="text-white/35">t/s</span>
+            </span>
+          )}
+
           {/* Thinking indicator */}
           {isThinking && (
             <span className={`text-[9px] text-white/50 flex items-center gap-1 ${designMode === 'boxy' ? 'font-mono' : ''}`}>

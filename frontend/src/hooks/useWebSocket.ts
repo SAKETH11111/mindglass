@@ -24,6 +24,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     setAgentError,
     endDebate,
     setError,
+    setBenchmarkReport,
     startDebate,
     addConstraint,
     addCheckpoint,
@@ -160,6 +161,9 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
             }
 
             case 'debate_complete': {
+              if (data.benchmark) {
+                setBenchmarkReport(data.benchmark);
+              }
               endDebate();
               console.log('Debate complete');
               break;
@@ -213,7 +217,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       console.error('Failed to create WebSocket:', err);
       setError('Failed to connect to server');
     }
-  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
+  }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, setBenchmarkReport, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
 
   useEffect(() => {
     if (autoConnect) {

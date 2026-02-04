@@ -14,7 +14,7 @@ import os
 from dotenv import load_dotenv
 
 from app.orchestrator.debate import DebateOrchestrator
-from app.websocket.messages import create_debate_complete, create_error
+from app.websocket.messages import create_error
 from app.config import settings
 from app.agents.industry import get_industry_agent_info, INDUSTRY_AGENTS
 
@@ -112,7 +112,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 api_key_override=api_key,
             ):
                 await websocket.send_json(token)
-            await websocket.send_json(create_debate_complete())
             print(f"[{datetime.now().isoformat()}] Debate complete")
         except asyncio.CancelledError:
             print(f"[{datetime.now().isoformat()}] Debate stream cancelled")

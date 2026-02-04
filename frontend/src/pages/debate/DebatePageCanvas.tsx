@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { Clock } from 'lucide-react';
+import { BarChart3, Clock } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, getAgentIdsForIndustry } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -25,6 +25,7 @@ import { DebateCanvas } from '@/components/graph';
 import { TimelineBar } from '@/components/TimelineBar';
 import { useSessionStore } from '@/hooks/useSessionStore';
 import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import type { ConsultationSession } from '@/types/session';
 
 // DiceBear avatar
@@ -65,6 +66,8 @@ export function DebatePage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isBenchOpen, setIsBenchOpen] = useState(false);
+  const [benchCopied, setBenchCopied] = useState(false);
   const [followUpInput, setFollowUpInput] = useState('');
   const [showFollowUp, setShowFollowUp] = useState(false);
   const hasStartedRef = useRef(false);
@@ -82,9 +85,23 @@ export function DebatePage() {
   const isDebating = useDebateStore((state) => state.isDebating);
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const resetDebate = useDebateStore((state) => state.resetDebate);
+  const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
 
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
+
+  const derivedBench = useMemo(() => {
+    if (!benchmarkReport) return null;
+    const agentBench = Object.values(benchmarkReport.agents || {});
+    let completionTokens = 0;
+    let completionTime = 0;
+    for (const a of agentBench) {
+      if (typeof a.completionTokens === 'number') completionTokens += a.completionTokens;
+      if (typeof a.completionTimeSec === 'number') completionTime += a.completionTimeSec;
+    }
+    const weightedTps = completionTime > 0 ? completionTokens / completionTime : null;
+    return { completionTokens, completionTime, weightedTps };
+  }, [benchmarkReport]);
   
   // Follow-up conversation actions
   const saveCurrentTurn = useDebateStore((state) => state.saveCurrentTurn);
@@ -436,14 +453,157 @@ export function DebatePage() {
             </p>
           </div>
 
-          {/* Right: History */}
-          <button
-            onClick={() => setIsHistoryOpen(true)}
-            className="flex items-center gap-2 text-white/50 hover:text-white transition-colors"
-          >
-            <Clock className="w-4 h-4" />
-            <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">HISTORY</span>
-          </button>
+          {/* Right: Bench + History */}
+          <div className="flex items-center gap-3">
+            <Dialog open={isBenchOpen} onOpenChange={setIsBenchOpen}>
+              <DialogTrigger asChild>
+                <button
+                  disabled={!benchmarkReport}
+                  className={`
+                    flex items-center gap-2 transition-colors
+                    ${benchmarkReport ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
+                  `}
+                  title={benchmarkReport ? 'View benchmark report' : 'Benchmark available after the run completes'}
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">BENCH</span>
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl bg-[#0a0a0a] border border-white/10 text-white">
+                <DialogHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
+                      Benchmark Report
+                    </DialogTitle>
+                    <button
+                      type="button"
+                      disabled={!benchmarkReport}
+                      onClick={async () => {
+                        if (!benchmarkReport) return;
+                        try {
+                          await navigator.clipboard.writeText(JSON.stringify(benchmarkReport, null, 2));
+                          setBenchCopied(true);
+                          window.setTimeout(() => setBenchCopied(false), 1200);
+                        } catch {
+                          // Best-effort; clipboard might be blocked in some contexts.
+                        }
+                      }}
+                      className={`
+                        px-2 py-1 border text-[10px] font-mono uppercase tracking-wider transition-colors
+                        ${benchmarkReport ? 'border-white/15 text-white/60 hover:text-white hover:border-white/30' : 'border-white/10 text-white/20 cursor-not-allowed'}
+                      `}
+                      title={benchmarkReport ? 'Copy benchmark JSON' : 'Benchmark available after the run completes'}
+                    >
+                      {benchCopied ? 'COPIED' : 'COPY JSON'}
+                    </button>
+                  </div>
+                </DialogHeader>
+
+                {benchmarkReport ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-white/[0.03] border border-white/[0.06] p-3">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">E2E</p>
+                        <p className="text-xl font-mono text-white/90">
+                          {(benchmarkReport.e2eMs / 1000).toFixed(2)}s
+                        </p>
+                      </div>
+                      <div className="bg-white/[0.03] border border-white/[0.06] p-3">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">TTFT (first token)</p>
+                        <p className="text-xl font-mono text-white/90">
+                          {benchmarkReport.firstTokenMs !== null ? `${benchmarkReport.firstTokenMs}ms` : '--'}
+                        </p>
+                      </div>
+                      <div className="bg-white/[0.03] border border-white/[0.06] p-3">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">Weighted TPS</p>
+                        <p className="text-xl font-mono text-[#F15A29]">
+                          {derivedBench?.weightedTps ? Math.round(derivedBench.weightedTps).toLocaleString() : '--'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-white/[0.02] border border-white/[0.06] p-3">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Rounds</p>
+                        <div className="space-y-1">
+                          {Object.entries(benchmarkReport.rounds || {})
+                            .sort(([a], [b]) => Number(a) - Number(b))
+                            .map(([roundNum, round]) => (
+                              <div key={roundNum} className="flex items-center justify-between text-xs font-mono">
+                                <span className="text-white/70">
+                                  {roundNum}. {round.name}
+                                </span>
+                                <span className="text-white/50">{round.durationMs}ms</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                      <div className="bg-white/[0.02] border border-white/[0.06] p-3">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Totals</p>
+                        <div className="space-y-1 text-xs font-mono text-white/70">
+                          <div className="flex items-center justify-between">
+                            <span>Completion tokens</span>
+                            <span className="text-white/50">
+                              {derivedBench?.completionTokens ? derivedBench.completionTokens.toLocaleString() : '--'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>Completion time</span>
+                            <span className="text-white/50">
+                              {derivedBench?.completionTime ? `${derivedBench.completionTime.toFixed(2)}s` : '--'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/[0.02] border border-white/[0.06] p-3">
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Agents</p>
+                      <div className="grid grid-cols-7 gap-2 text-[10px] font-mono uppercase tracking-wider text-white/40">
+                        <span>Agent</span>
+                        <span>Rnd</span>
+                        <span>Model</span>
+                        <span>TTFT</span>
+                        <span>ITL</span>
+                        <span>Tok</span>
+                        <span>TPS</span>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {Object.entries(benchmarkReport.agents || {})
+                          .sort((a, b) => {
+                            const ar = a[1].round ?? 99;
+                            const br = b[1].round ?? 99;
+                            if (ar !== br) return ar - br;
+                            return a[0].localeCompare(b[0]);
+                          })
+                          .map(([agentId, a]) => (
+                            <div key={agentId} className="grid grid-cols-7 gap-2 text-xs font-mono text-white/70">
+                              <span className="text-white/90">{agentId}</span>
+                              <span className="text-white/50">{a.round}</span>
+                              <span className="text-white/50 truncate" title={a.model}>{a.model}</span>
+                              <span className="text-white/50">{a.ttftMs !== null ? `${a.ttftMs}ms` : '--'}</span>
+                              <span className="text-white/50">{a.avgItlMs !== null ? `${a.avgItlMs}ms` : '--'}</span>
+                              <span className="text-white/50">{typeof a.completionTokens === 'number' ? a.completionTokens.toLocaleString() : '--'}</span>
+                              <span className="text-[#F15A29]">{typeof a.tokensPerSecond === 'number' ? Math.round(a.tokensPerSecond).toLocaleString() : '--'}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-white/50 font-mono">No benchmark report available.</p>
+                )}
+              </DialogContent>
+            </Dialog>
+
+            <button
+              onClick={() => setIsHistoryOpen(true)}
+              className="flex items-center gap-2 text-white/50 hover:text-white transition-colors"
+            >
+              <Clock className="w-4 h-4" />
+              <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">HISTORY</span>
+            </button>
+          </div>
         </div>
       </header>
 
