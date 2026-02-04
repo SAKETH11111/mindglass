@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Send, MessageSquarePlus } from 'lucide-react';
-import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type BaseAgentId } from '@/types/agent';
+import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, type BaseAgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSessionStore } from '@/hooks/useSessionStore';
 import { DotMatrixText } from '@/components/DotMatrixText';
+import type { ConsultationSession } from '@/types/session';
 
 // DiceBear Notionists avatar URL generator
 const getAvatarUrl = (agentId: AgentId) => {
@@ -183,6 +184,7 @@ export function DebatePage() {
   // Follow-up question state
   const [followUpInput, setFollowUpInput] = useState('');
   const [showFollowUp, setShowFollowUp] = useState(false);
+  const hasHydratedSessionRef = useRef(false);
 
   // Session store for managing conversation history
   const {
@@ -258,15 +260,85 @@ export function DebatePage() {
     }
   }, []);
 
+  const hydrateFromSession = useCallback((session: ConsultationSession) => {
+    if (!session.turns.length) return false;
+    const turns = session.turns;
+    const lastTurn = turns[turns.length - 1];
+    const agentIds = lastTurn.selectedAgents.length > 0
+      ? lastTurn.selectedAgents
+      : (Object.keys(lastTurn.agentResponses) as AgentId[]);
+
+    const agentsState = agentIds.reduce<Record<string, AgentState>>((acc, agentId) => {
+      const text = lastTurn.agentResponses[agentId] || '';
+      acc[agentId] = {
+        id: agentId,
+        name: AGENT_NAMES[agentId] || agentId,
+        text,
+        color: AGENT_COLORS[agentId] || '#6B7280',
+        phase: 'complete',
+        isActive: Boolean(text),
+        isStreaming: false,
+        tokenCount: 0,
+        tokensPerSecond: 0,
+        streamStartTime: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        completionTime: 0,
+      };
+      return acc;
+    }, {});
+
+    useDebateStore.setState((state) => ({
+      ...state,
+      query: lastTurn.query,
+      phase: 'complete',
+      isDebating: false,
+      agents: agentsState,
+      tokensPerSecond: 0,
+      totalTokens: 0,
+      error: null,
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      constraints: [],
+      userProxyNode: null,
+      checkpoints: [],
+      activeCheckpointIndex: null,
+      debateStartTime: null,
+      completedTurns: turns.slice(0, -1).map((turn, index) => ({
+        id: `turn-${index}-${turn.timestamp}`,
+        query: turn.query,
+        agentTexts: turn.agentResponses,
+        timestamp: turn.timestamp,
+      })),
+      followUpNodes: turns.slice(1).map((turn, index) => ({
+        id: `followup-${index}-${turn.timestamp}`,
+        text: turn.query,
+        timestamp: turn.timestamp,
+        turnIndex: index + 1,
+      })),
+      currentTurnIndex: turns.length - 1,
+    }));
+
+    setShowFollowUp(lastTurn.isComplete);
+    return true;
+  }, []);
+
   // Load session if resuming
   useEffect(() => {
-    if (sessionIdParam) {
-      loadSession(sessionIdParam);
+    hasHydratedSessionRef.current = false;
+    if (!sessionIdParam) return;
+    const session = loadSession(sessionIdParam);
+    if (session && session.turns.length > 0) {
+      hasStartedRef.current = true;
+      hasHydratedSessionRef.current = hydrateFromSession(session);
     }
-  }, [sessionIdParam, loadSession]);
+  }, [sessionIdParam, loadSession, hydrateFromSession]);
 
   // Start debate when connected and query is present
   useEffect(() => {
+    if (hasHydratedSessionRef.current) return;
     if (query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
       hasStartedRef.current = true;
       debateStartTime.current = Date.now();
@@ -287,6 +359,7 @@ export function DebatePage() {
 
   // Mark turn complete when debate ends
   useEffect(() => {
+    if (hasHydratedSessionRef.current) return;
     if (phase === 'complete' && !isDebating) {
       completeTurn();
       setShowFollowUp(true); // Show follow-up input after debate completes

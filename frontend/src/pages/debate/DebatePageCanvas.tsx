@@ -18,13 +18,14 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Clock } from 'lucide-react';
-import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, getAgentIdsForIndustry } from '@/types/agent';
+import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, getAgentIdsForIndustry } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { DebateCanvas } from '@/components/graph';
 import { TimelineBar } from '@/components/TimelineBar';
 import { useSessionStore } from '@/hooks/useSessionStore';
 import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
+import type { ConsultationSession } from '@/types/session';
 
 // DiceBear avatar
 const getAvatarUrl = (agentId: string) => {
@@ -68,6 +69,7 @@ export function DebatePage() {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const hasStartedRef = useRef(false);
   const hasAutoOpenedSynth = useRef(false);
+  const hasHydratedSessionRef = useRef(false);
 
   // Parse selected agents from URL (accepts any valid agent IDs)
   const agentsFromUrl = agentsParam
@@ -119,6 +121,78 @@ export function DebatePage() {
     return base.includes('synthesizer') ? base : [...base, 'synthesizer'];
   }, [selectedAgentsFromUrl, industryParam, industryAgentIds]);
 
+  const hydrateFromSession = useCallback((session: ConsultationSession) => {
+    if (!session.turns.length) return false;
+
+    const turns = session.turns;
+    const lastTurn = turns[turns.length - 1];
+    const agentIds = lastTurn.selectedAgents.length > 0
+      ? lastTurn.selectedAgents
+      : (Object.keys(lastTurn.agentResponses) as AgentId[]);
+
+    const agentsState = agentIds.reduce<Record<string, AgentState>>((acc, agentId) => {
+      const text = lastTurn.agentResponses[agentId] || '';
+      acc[agentId] = {
+        id: agentId,
+        name: AGENT_NAMES[agentId] || agentId,
+        text,
+        color: AGENT_COLORS[agentId] || '#6B7280',
+        phase: 'complete',
+        isActive: Boolean(text),
+        isStreaming: false,
+        tokenCount: 0,
+        tokensPerSecond: 0,
+        streamStartTime: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        completionTime: 0,
+      };
+      return acc;
+    }, {});
+
+    const completedTurns = turns.slice(0, -1).map((turn, index) => ({
+      id: `turn-${index}-${turn.timestamp}`,
+      query: turn.query,
+      agentTexts: turn.agentResponses,
+      timestamp: turn.timestamp,
+    }));
+
+    const followUpNodes = turns.slice(1).map((turn, index) => ({
+      id: `followup-${index}-${turn.timestamp}`,
+      text: turn.query,
+      timestamp: turn.timestamp,
+      turnIndex: index + 1,
+    }));
+
+    useDebateStore.setState((state) => ({
+      ...state,
+      query: lastTurn.query,
+      phase: 'complete',
+      isDebating: false,
+      agents: agentsState,
+      tokensPerSecond: 0,
+      totalTokens: 0,
+      error: null,
+      currentIndustry: industryParam || null,
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      constraints: [],
+      userProxyNode: null,
+      checkpoints: [],
+      activeCheckpointIndex: null,
+      debateStartTime: null,
+      completedTurns,
+      followUpNodes,
+      currentTurnIndex: turns.length - 1,
+    }));
+
+    setShowFollowUp(lastTurn.isComplete);
+    setSelectedNodeId('node-synthesizer');
+    return true;
+  }, [industryParam]);
+
   // Visible agents are the ones we should display in the UI
   const visibleAgents = useMemo<AgentId[]>(() => {
     return effectiveSelectedAgents;
@@ -162,16 +236,21 @@ export function DebatePage() {
 
   // Load session if resuming
   useEffect(() => {
-    if (sessionIdParam) {
-      loadSession(sessionIdParam);
+    hasHydratedSessionRef.current = false;
+    if (!sessionIdParam) return;
+    const session = loadSession(sessionIdParam);
+    if (session && session.turns.length > 0) {
+      hasStartedRef.current = true;
+      hasHydratedSessionRef.current = hydrateFromSession(session);
     }
-  }, [sessionIdParam, loadSession]);
+  }, [sessionIdParam, loadSession, hydrateFromSession]);
 
   // Reset store when URL query changes from home page navigation (not follow-ups)
   const lastUrlQueryRef = useRef<string>(query || '');
   useEffect(() => {
     // Only reset if the URL query itself changed (new debate from home page)
     // NOT if the store query changed (which happens during follow-ups)
+    if (sessionIdParam) return;
     if (query && query !== lastUrlQueryRef.current) {
       console.log('[DebatePageCanvas] URL query changed, resetting debate');
       lastUrlQueryRef.current = query;
@@ -185,6 +264,7 @@ export function DebatePage() {
 
   // Start debate on mount
   useEffect(() => {
+    if (hasHydratedSessionRef.current) return;
     if (query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
       hasStartedRef.current = true;
       debateStartTime.current = Date.now();
@@ -203,6 +283,7 @@ export function DebatePage() {
 
   // Mark turn complete when debate ends
   useEffect(() => {
+    if (hasHydratedSessionRef.current) return;
     if (phase === 'complete' && !isDebating) {
       completeTurn();
       setShowFollowUp(true);
