@@ -297,26 +297,26 @@ export function DebatePage() {
 
   // Auto-open/close perspectives based on streaming state
   useEffect(() => {
-    const perspectiveAgents = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk'] as AgentId[];
+    const perspectiveAgents = selectedAgentsFromUrl.filter(id => id !== 'synthesizer');
 
     // Auto-open agents that are streaming, auto-close when done
     const newOpenAgents = new Set<AgentId>();
     perspectiveAgents.forEach(id => {
-      if (agents[id].isStreaming) {
+      if (agents[id]?.isStreaming) {
         newOpenAgents.add(id);
       }
     });
     setOpenAgents(newOpenAgents);
 
     // Auto-collapse perspectives when synthesizer is complete
-    const hasSynthesis = agents.synthesizer.text && !agents.synthesizer.isStreaming;
+    const hasSynthesis = agents.synthesizer?.text && !agents.synthesizer?.isStreaming;
     if (hasSynthesis) {
       setIsPerspectivesOpen(false);
-    } else if (perspectiveAgents.some(id => agents[id].isStreaming)) {
+    } else if (perspectiveAgents.some(id => agents[id]?.isStreaming)) {
       // Keep perspectives open while any perspective agent is streaming
       setIsPerspectivesOpen(true);
     }
-  }, [agents]);
+  }, [agents, selectedAgentsFromUrl]);
 
   // Handle agent selection (from sidebar or center grid)
   const handleAgentClick = (agentId: AgentId) => {
@@ -620,14 +620,15 @@ export function DebatePage() {
               <div className={`w-1.5 h-1.5 ${isDebating ? 'bg-emerald-500/80' : 'bg-white/30'} ${designMode === 'round' ? 'rounded-full' : ''}`} />
               <span>
                 {(() => {
-                  const streamingCount = AGENT_IDS.filter(id => agents[id].isStreaming).length;
-                  const completedCount = AGENT_IDS.filter(id => agents[id].text && !agents[id].isStreaming).length;
+                  const streamingCount = selectedAgentsFromUrl.filter(id => agents[id]?.isStreaming).length;
+                  const completedCount = selectedAgentsFromUrl.filter(id => agents[id]?.text && !agents[id]?.isStreaming).length;
+                  const totalAgents = selectedAgentsFromUrl.length;
                   if (streamingCount > 0) {
                     return designMode === 'boxy' ? `${streamingCount} STREAMING` : `${streamingCount} streaming`;
                   } else if (completedCount > 0) {
-                    return designMode === 'boxy' ? `${completedCount}/8 COMPLETE` : `${completedCount}/8 complete`;
+                    return designMode === 'boxy' ? `${completedCount}/${totalAgents} COMPLETE` : `${completedCount}/${totalAgents} complete`;
                   }
-                  return designMode === 'boxy' ? '8 AGENTS' : '8 agents';
+                  return designMode === 'boxy' ? `${totalAgents} AGENTS` : `${totalAgents} agents`;
                 })()}
               </span>
             </div>
@@ -653,8 +654,10 @@ export function DebatePage() {
 
             {/* ═══ PERSPECTIVES (Auto-open/close based on streaming) ═══ */}
             {(() => {
-              const perspectiveAgents = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk'] as AgentId[];
-              const anyStreaming = perspectiveAgents.some(id => agents[id].isStreaming);
+              const perspectiveAgents = selectedAgentsFromUrl.filter(id => id !== 'synthesizer');
+              const anyStreaming = perspectiveAgents.some(id => agents[id]?.isStreaming);
+              const completedCount = perspectiveAgents.filter(id => agents[id]?.text).length;
+              const totalPerspectives = perspectiveAgents.length;
 
               return (
                 <details
@@ -675,7 +678,7 @@ export function DebatePage() {
                     </svg>
                     <span>{designMode === 'boxy' ? 'CONSULTANT INSIGHTS' : 'Consultant Insights'}</span>
                     <span className="text-white/25">
-                      ({perspectiveAgents.filter(id => agents[id].text).length}/7)
+                      ({completedCount}/{totalPerspectives})
                     </span>
                     {anyStreaming && (
                       <div className={`w-1.5 h-1.5 ml-1 ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
