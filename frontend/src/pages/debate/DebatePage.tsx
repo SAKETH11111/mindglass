@@ -174,6 +174,7 @@ export function DebatePage() {
 
   // Inspector expand/collapse state
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
+  const hasAutoOpenedSynth = useRef(false);
 
   // Collapsible section state - for auto-open/close behavior
   const [isPerspectivesOpen, setIsPerspectivesOpen] = useState(true);
@@ -205,6 +206,9 @@ export function DebatePage() {
   const connectionState = useDebateStore((state) => state.connectionState);
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const resetDebate = useDebateStore((state) => state.resetDebate);
+
+  const synthesizerText = agents.synthesizer?.text || '';
+  const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
   
   // Follow-up conversation actions
   const saveCurrentTurn = useDebateStore((state) => state.saveCurrentTurn);
@@ -227,6 +231,24 @@ export function DebatePage() {
 
   // Track if this is a new debate or follow-up
   const hasStartedRef = useRef(false);
+
+  // Reset auto-open state on new debate
+  useEffect(() => {
+    if (isDebating) {
+      hasAutoOpenedSynth.current = false;
+    }
+  }, [isDebating, query]);
+
+  // Auto-open synthesizer inspector on completion
+  useEffect(() => {
+    if (!isDebating || hasAutoOpenedSynth.current) return;
+    if (synthesizerText && !synthesizerStreaming) {
+      hasAutoOpenedSynth.current = true;
+      setSelectedAgent('synthesizer');
+      setIsInspectorOpen(true);
+      setIsInspectorExpanded(true);
+    }
+  }, [isDebating, synthesizerText, synthesizerStreaming]);
 
   // Initialize selected agents from URL param if provided
   useEffect(() => {

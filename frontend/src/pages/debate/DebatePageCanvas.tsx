@@ -67,6 +67,7 @@ export function DebatePage() {
   const [followUpInput, setFollowUpInput] = useState('');
   const [showFollowUp, setShowFollowUp] = useState(false);
   const hasStartedRef = useRef(false);
+  const hasAutoOpenedSynth = useRef(false);
 
   // Parse selected agents from URL (accepts any valid agent IDs)
   const agentsFromUrl = agentsParam
@@ -79,6 +80,9 @@ export function DebatePage() {
   const isDebating = useDebateStore((state) => state.isDebating);
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const resetDebate = useDebateStore((state) => state.resetDebate);
+
+  const synthesizerText = agents.synthesizer?.text || '';
+  const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
   
   // Follow-up conversation actions
   const saveCurrentTurn = useDebateStore((state) => state.saveCurrentTurn);
@@ -138,6 +142,23 @@ export function DebatePage() {
       setSelectedAgents(agentsFromUrl);
     }
   }, []); // Empty dependency array - run once on mount
+
+  // Reset auto-open state for each new debate
+  useEffect(() => {
+    if (isDebating) {
+      hasAutoOpenedSynth.current = false;
+    }
+  }, [isDebating, query]);
+
+  // Auto-open synthesizer inspector when final output is ready
+  useEffect(() => {
+    if (!isDebating || hasAutoOpenedSynth.current) return;
+    if (synthesizerText && !synthesizerStreaming) {
+      hasAutoOpenedSynth.current = true;
+      setSelectedNodeId('node-synthesizer');
+      setIsInspectorExpanded(true);
+    }
+  }, [isDebating, synthesizerText, synthesizerStreaming]);
 
   // Load session if resuming
   useEffect(() => {
