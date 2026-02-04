@@ -2,23 +2,28 @@ import { useState } from 'react';
 import { useApiKeyStore } from '@/hooks/useApiKeyStore';
 import { ExternalLink, X, Key } from 'lucide-react';
 
-export function ApiKeyPrompt() {
-  const { apiKey, setApiKey, hasSeenPrompt, markPromptSeen } = useApiKeyStore();
-  const [inputKey, setInputKey] = useState('');
-  const [isSaved, setIsSaved] = useState(false);
+interface ApiKeyPromptProps {
+  isOpen: boolean;
+  onContinue: () => void;
+  onSkip: () => void;
+}
 
-  // Only show on first visit if no API key is set
-  if (apiKey || hasSeenPrompt) return null;
+export function ApiKeyPrompt({ isOpen, onContinue, onSkip }: ApiKeyPromptProps) {
+  const { apiKey, setApiKey, markPromptSeen } = useApiKeyStore();
+  const [inputKey, setInputKey] = useState(apiKey || '');
+
+  if (!isOpen) return null;
 
   const handleSave = () => {
     if (inputKey.trim()) {
       setApiKey(inputKey.trim());
-      setIsSaved(true);
     }
+    onContinue();
   };
 
-  const handleDismiss = () => {
+  const handleSkip = () => {
     markPromptSeen();
+    onSkip();
   };
 
   const handleGetApiKey = () => {
@@ -26,49 +31,45 @@ export function ApiKeyPrompt() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
-      <div className="relative w-full max-w-md bg-[#0a0a0a] border border-white/20 p-8 shadow-2xl">
-        {/* Dismiss button */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm">
+      <div className="relative w-full max-w-[560px] border border-white/15 bg-[rgba(38,38,38,0.8)] backdrop-blur-[12px] shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
         <button
-          onClick={handleDismiss}
+          onClick={handleSkip}
           className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+          aria-label="Close"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-[#F15A29]/10 border border-[#F15A29]/30 flex items-center justify-center mx-auto mb-4">
-            <Key className="w-8 h-8 text-[#F15A29]" />
+        <div className="p-7 border-b border-white/10">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 bg-[#F15A29]/15 border border-[#F15A29]/40 flex items-center justify-center">
+              <Key className="h-6 w-6 text-[#F15A29]" />
+            </div>
+            <div>
+              <h2 className="text-xl text-white font-semibold tracking-wide">WELCOME TO PRISM</h2>
+              <p className="text-[12px] text-white/60 font-mono">
+                Multi-agent AI consulting powered by Cerebras
+              </p>
+            </div>
           </div>
-          <h2 className="text-2xl font-bold text-white font-mono tracking-wider mb-2">
-            WELCOME TO PRISM
-          </h2>
-          <p className="text-sm text-white/60 font-mono">
-            Multi-agent AI consulting powered by Cerebras
-          </p>
         </div>
 
-        {/* Description */}
-        <div className="space-y-4 mb-8">
-          <p className="text-sm text-white/70 leading-relaxed text-center">
-            PRISM uses the Cerebras API to run 8 expert AI agents simultaneously.
-            Get your free API key to start debating.
+        <div className="px-7 pt-6 space-y-4">
+          <p className="text-sm text-white/70 leading-relaxed">
+            PRISM uses the Cerebras API to run 8 expert AI agents simultaneously. Get your free API key to start debating.
           </p>
 
-          <div className="flex items-center justify-center gap-2 text-xs text-white/40 font-mono">
+          <div className="flex items-center gap-2 text-xs text-white/50 font-mono">
             <span>Fast tier:</span>
-            <span className="text-emerald-400">Llama 3.1 8B</span>
-            <span className="mx-2">|</span>
+            <span className="text-white">Llama 3.1 8B</span>
+            <span className="text-white/30">|</span>
             <span>Pro tier:</span>
-            <span className="text-violet-400">GPT-OSS 120B</span>
+            <span className="text-white">GPT-OSS 120B</span>
           </div>
-        </div>
 
-        {/* Input */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-mono text-white/50 uppercase tracking-wider mb-2">
+          <div className="pt-4 space-y-2">
+            <label className="block text-[11px] uppercase tracking-[0.2em] text-white/40 font-mono">
               Cerebras API Key
             </label>
             <input
@@ -76,47 +77,40 @@ export function ApiKeyPrompt() {
               value={inputKey}
               onChange={(e) => setInputKey(e.target.value)}
               placeholder="csk-..."
-              className="w-full bg-[#111] border border-white/20 px-4 py-3 text-sm font-mono text-white placeholder-white/30 focus:outline-none focus:border-[#F15A29]/50 transition-colors"
+              className="w-full bg-[#111] border border-white/20 px-4 py-3 text-sm font-mono text-white placeholder-white/30 focus:outline-none focus:border-[#F15A29]/60 transition-colors"
             />
+            <button
+              onClick={handleGetApiKey}
+              className="flex items-center gap-2 text-xs text-[#F15A29] hover:text-[#F15A29]/80 transition-colors font-mono"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Get your free API key from Cerebras Cloud
+            </button>
           </div>
-
-          {/* Get API Key link */}
-          <button
-            onClick={handleGetApiKey}
-            className="flex items-center justify-center gap-2 text-xs text-[#F15A29] hover:text-[#F15A29]/80 transition-colors font-mono w-full"
-          >
-            <ExternalLink className="w-3 h-3" />
-            Get your free API key from Cerebras Cloud
-          </button>
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-3 mt-8">
+        <div className="flex items-center gap-3 px-7 py-6">
           <button
-            onClick={handleDismiss}
-            className="flex-1 px-4 py-3 border border-white/20 text-white/50 font-mono text-xs uppercase tracking-wider hover:bg-white/5 transition-colors"
+            onClick={handleSkip}
+            className="flex-1 px-4 py-3 border border-white/20 text-white/60 font-mono text-xs uppercase tracking-wider hover:bg-white/5 transition-colors"
           >
             Skip for now
           </button>
           <button
             onClick={handleSave}
-            disabled={!inputKey.trim() || isSaved}
-            className={`flex-1 px-4 py-3 font-mono text-xs uppercase tracking-wider transition-colors ${
-              isSaved
-                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400'
-                : 'bg-[#F15A29] text-white hover:bg-[#F15A29]/90'
-            }`}
+            className="flex-1 px-4 py-3 font-mono text-xs uppercase tracking-wider bg-[#F15A29] text-white hover:bg-[#F15A29]/90 transition-colors"
           >
-            {isSaved ? 'Saved!' : 'Start Debating'}
+            Start Debating
           </button>
         </div>
 
-        {/* Note */}
-        <p className="text-[10px] text-white/30 mt-6 text-center font-mono">
-          Your API key is stored locally and sent only to run your sessions. It is not stored on our servers.
-          <br />
-          You can add it later from the settings menu.
-        </p>
+        <div className="px-7 pb-6">
+          <p className="text-[10px] text-white/35 font-mono">
+            Your API key is stored locally and sent only to run your sessions. It is not stored on our servers.
+            <br />
+            You can add it later from the settings menu.
+          </p>
+        </div>
       </div>
     </div>
   );

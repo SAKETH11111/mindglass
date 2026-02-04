@@ -13,6 +13,7 @@ import { useSessionStore } from '@/hooks/useSessionStore'
 import { useDebateStore } from '@/hooks/useDebateStore'
 import { ApiKeyPrompt } from '@/components/ApiKeyPrompt'
 import { SettingsPanel } from '@/components/SettingsPanel'
+import { useApiKeyStore } from '@/hooks/useApiKeyStore'
 
 // DiceBear Notionists avatar URLs for each agent (including industry-specific)
 const AGENT_AVATARS: Record<string, string> = {
@@ -53,8 +54,16 @@ function HomePage() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isAgentWindowOpen, setIsAgentWindowOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isApiPromptOpen, setIsApiPromptOpen] = useState(false)
+  const [pendingSubmission, setPendingSubmission] = useState<{
+    query: string
+    selectedAgents: string[]
+    selectedTier: ModelTier
+    selectedIndustry: IndustryType
+  } | null>(null)
   const agentAvatarsRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
+  const { apiKey } = useApiKeyStore()
 
   // Session management
   const {
@@ -90,6 +99,17 @@ function HomePage() {
     e.preventDefault()
     if (!inputValue.trim()) return
 
+    if (!apiKey) {
+      setPendingSubmission({
+        query: inputValue.trim(),
+        selectedAgents,
+        selectedTier,
+        selectedIndustry,
+      })
+      setIsApiPromptOpen(true)
+      return
+    }
+
     // Reset previous debate state before starting new one
     resetDebate()
 
@@ -101,7 +121,24 @@ function HomePage() {
     const agentsParam = `&agents=${selectedAgents.join(',')}`
     const industryParam = selectedIndustry !== 'any' ? `&industry=${selectedIndustry}` : ''
     navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}${agentsParam}${industryParam}`)
-  }, [inputValue, navigate, selectedTier, selectedAgents, createSession, resetDebate])
+  }, [inputValue, navigate, selectedTier, selectedAgents, createSession, resetDebate, apiKey, selectedIndustry])
+
+  const continueFromPrompt = useCallback((shouldClearPending: boolean) => {
+    if (!pendingSubmission) return
+
+    const { query, selectedAgents, selectedTier, selectedIndustry } = pendingSubmission
+    setIsApiPromptOpen(false)
+    if (shouldClearPending) {
+      setPendingSubmission(null)
+    }
+
+    resetDebate()
+    createSession(query, selectedAgents, selectedTier)
+
+    const agentsParam = `&agents=${selectedAgents.join(',')}`
+    const industryParam = selectedIndustry !== 'any' ? `&industry=${selectedIndustry}` : ''
+    navigate(`/debate?q=${encodeURIComponent(query)}&model=${selectedTier}${agentsParam}${industryParam}`)
+  }, [pendingSubmission, resetDebate, createSession, navigate])
 
   const handleSelectSession = useCallback((sessionId: string) => {
     const session = loadSession(sessionId)
@@ -352,8 +389,12 @@ function HomePage() {
         </div>
       </main>
 
-      {/* API Key Prompt - shown by default */}
-      <ApiKeyPrompt />
+      {/* API Key Prompt - shown after submit if needed */}
+      <ApiKeyPrompt
+        isOpen={isApiPromptOpen}
+        onContinue={() => continueFromPrompt(true)}
+        onSkip={() => continueFromPrompt(true)}
+      />
 
       {/* Settings Panel */}
       <SettingsPanel
