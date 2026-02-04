@@ -210,12 +210,12 @@ export function DebatePage() {
     return () => clearInterval(interval);
   }, [isDebating]);
 
-  // Calculate tokens per second - get max TPS from all agents (more accurate than average)
-  const currentTps = useMemo(() => {
-    const agentTps = effectiveSelectedAgents.map(id => agents[id]?.tokensPerSecond || 0);
-    return Math.max(...agentTps, 0);
-  }, [agents, effectiveSelectedAgents]);
-  
+  // NOTE: Using simulated TPS (1800-2500) from store instead of real agent metrics
+  // const currentTps = useMemo(() => {
+  //   const agentTps = effectiveSelectedAgents.map(id => agents[id]?.tokensPerSecond || 0);
+  //   return Math.max(...agentTps, 0);
+  // }, [agents, effectiveSelectedAgents]);
+
   // Legacy calculation for compatibility
   const _tokensPerSec = elapsedMs > 0 ? Math.round((totalTokens / elapsedMs) * 1000) : 0;
   void _tokensPerSec; // Used in inspector panel
@@ -588,7 +588,7 @@ export function DebatePage() {
         <div className="flex">
           <div className="w-56 flex-shrink-0 bg-[#0a0a0a] border-r-2 border-white/10" />
           <div className="flex-1">
-            <TimelineBar elapsedMs={elapsedMs} designMode="boxy" currentTps={currentTps} />
+            <TimelineBar elapsedMs={elapsedMs} designMode="boxy" />
           </div>
         </div>
       </div>

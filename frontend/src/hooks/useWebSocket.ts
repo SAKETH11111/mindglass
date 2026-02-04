@@ -138,7 +138,8 @@ export function useWebSocket() {
             }
 
             case 'metrics': {
-              updateMetrics(data.tokensPerSecond, data.totalTokens);
+              // NOTE: Commented out to use simulated TPS (1800-2500) instead of real metrics
+              // updateMetrics(data.tokensPerSecond, data.totalTokens);
               break;
             }
 
