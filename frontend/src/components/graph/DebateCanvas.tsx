@@ -62,67 +62,68 @@ const HORIZONTAL_GAP = 60;
 const VERTICAL_GAP = 100;
 
 // Debate Round Structure:
-// Round 1: Analyst + Optimist (opening)
-// Round 2: Critic + Pessimist (challenge)
-// Round 3: Analyst + Optimist (defense - same nodes)
-// Round 4: Strategist + Finance + Risk (expert analysis)
+// Round 1: Opening agents (analyst + optimist, or industry-specific)
+// Round 2: Challenge agents (critic + pessimist)
+// Round 3: Same as Round 1 (defense - same nodes)
+// Round 4: Expert Analysis (strategist + finance/industry + risk/industry)
 // Round 5: Synthesizer (final verdict)
 
-const ROUND_1_AGENTS: AgentId[] = ['analyst', 'optimist'];
-const ROUND_2_AGENTS: AgentId[] = ['critic', 'pessimist'];
-const ROUND_4_AGENTS: AgentId[] = ['strategist', 'finance', 'risk'];
-const ROUND_5_AGENTS: AgentId[] = ['synthesizer'];
-const ALL_AGENTS: AgentId[] = [...ROUND_1_AGENTS, ...ROUND_2_AGENTS, ...ROUND_4_AGENTS, ...ROUND_5_AGENTS];
+// Base agents for each round (industry-specific agents replace finance/risk)
+const ROUND_1_BASE: AgentId[] = ['analyst', 'optimist'];
+const ROUND_2_BASE: AgentId[] = ['critic', 'pessimist'];
+const ROUND_5_BASE: AgentId[] = ['synthesizer'];
 
-// Visual layout positions
+// Industry-specific agents that go in Round 4 (replacing finance/risk)
+const INDUSTRY_ROUND_4_AGENTS = [
+  'saas_metrics', 'saas_growth',
+  'ecommerce_conversion', 'ecommerce_operations', 
+  'fintech_compliance', 'fintech_risk',
+  'healthcare_clinical', 'healthcare_regulatory',
+  'manufacturing_operations', 'manufacturing_quality',
+  'consulting_client', 'consulting_delivery',
+  'finance', 'risk',  // Also include base finance/risk
+];
+
+// Helper to determine which round an agent belongs to
+const getAgentRound = (agentId: AgentId | string): number => {
+  if (ROUND_1_BASE.includes(agentId as AgentId)) return 1;
+  if (ROUND_2_BASE.includes(agentId as AgentId)) return 2;
+  if (ROUND_5_BASE.includes(agentId as AgentId)) return 5;
+  if (INDUSTRY_ROUND_4_AGENTS.includes(agentId)) return 4;
+  return 4; // Default unknown agents to Round 4
+};
+
+// Visual layout positions - now works with dynamic agents
 const getDebatePosition = (
-  agentId: AgentId,
+  agentId: AgentId | string,
+  allAgentIds: string[],
   canvasWidth: number = 1400
 ): { x: number; y: number } => {
   const centerX = canvasWidth / 2;
+  const round = getAgentRound(agentId);
   
-  // Round 1: Analyst + Optimist at top (2 agents, centered)
-  if (ROUND_1_AGENTS.includes(agentId)) {
-    const index = ROUND_1_AGENTS.indexOf(agentId);
-    const totalWidth = 2 * CARD_WIDTH + HORIZONTAL_GAP;
-    const startX = centerX - totalWidth / 2;
-    return {
-      x: startX + index * (CARD_WIDTH + HORIZONTAL_GAP),
-      y: 40,
-    };
-  }
+  // Get agents in the same round
+  const agentsInRound = allAgentIds.filter(id => getAgentRound(id) === round);
+  const indexInRound = agentsInRound.indexOf(agentId);
+  const numInRound = agentsInRound.length;
   
-  // Round 2: Critic + Pessimist below (challengers)
-  if (ROUND_2_AGENTS.includes(agentId)) {
-    const index = ROUND_2_AGENTS.indexOf(agentId);
-    const totalWidth = 2 * CARD_WIDTH + HORIZONTAL_GAP;
-    const startX = centerX - totalWidth / 2;
-    return {
-      x: startX + index * (CARD_WIDTH + HORIZONTAL_GAP),
-      y: 40 + CARD_HEIGHT + VERTICAL_GAP,
-    };
-  }
+  // Calculate row Y position
+  const getRowY = (roundNum: number) => {
+    switch (roundNum) {
+      case 1: return 40;
+      case 2: return 40 + CARD_HEIGHT + VERTICAL_GAP;
+      case 4: return 40 + 2 * (CARD_HEIGHT + VERTICAL_GAP);
+      case 5: return 40 + 3 * (CARD_HEIGHT + VERTICAL_GAP);
+      default: return 300;
+    }
+  };
   
-  // Round 4: Strategist + Finance + Risk (3 agents, centered)
-  if (ROUND_4_AGENTS.includes(agentId)) {
-    const index = ROUND_4_AGENTS.indexOf(agentId);
-    const totalWidth = 3 * CARD_WIDTH + 2 * HORIZONTAL_GAP;
-    const startX = centerX - totalWidth / 2;
-    return {
-      x: startX + index * (CARD_WIDTH + HORIZONTAL_GAP),
-      y: 40 + 2 * (CARD_HEIGHT + VERTICAL_GAP),
-    };
-  }
+  // Calculate X position (center the row of agents)
+  const totalWidth = numInRound * CARD_WIDTH + (numInRound - 1) * HORIZONTAL_GAP;
+  const startX = centerX - totalWidth / 2;
+  const x = startX + indexInRound * (CARD_WIDTH + HORIZONTAL_GAP);
   
-  // Round 5: Synthesizer at bottom center
-  if (ROUND_5_AGENTS.includes(agentId)) {
-    return {
-      x: centerX - CARD_WIDTH / 2,
-      y: 40 + 3 * (CARD_HEIGHT + VERTICAL_GAP),
-    };
-  }
-  
-  return { x: centerX, y: 300 };
+  return { x, y: getRowY(round) };
 };
 
 export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvasProps) {
@@ -168,20 +169,23 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
     };
     
     // Helper to get position with turn offset
-    const getPositionForTurn = (agentId: AgentId, turnIndex: number) => {
-      const basePos = getDebatePosition(agentId, canvasWidth);
+    const getPositionForTurn = (agentId: string, allAgentIds: string[], turnIndex: number) => {
+      const basePos = getDebatePosition(agentId, allAgentIds, canvasWidth);
       return {
         x: basePos.x,
         y: basePos.y + getTurnYOffset(turnIndex),
       };
     };
     
+    // Get all agent IDs from the store (handles industry-specific agents)
+    const allAgentIds = Object.keys(agents);
+    
     // ═══ Add nodes for COMPLETED turns (faded/collapsed) ═══
     completedTurns.forEach((turn, turnIdx) => {
       // For completed turns, only show synthesizer as a summary card
       const synthText = turn.agentTexts.synthesizer;
       if (synthText) {
-        const position = getPositionForTurn('synthesizer', turnIdx);
+        const position = getPositionForTurn('synthesizer', allAgentIds, turnIdx);
         nodes.push({
           id: `node-turn${turnIdx}-synthesizer`,
           type: 'agentThought',
@@ -228,23 +232,25 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
     });
     
     // ═══ Add nodes for CURRENT turn ═══
-    const activeAgents = ALL_AGENTS.filter(id => agents[id].text || agents[id].isStreaming);
+    // Filter to agents that have content or are streaming
+    const activeAgents = allAgentIds.filter(id => {
+      const agent = agents[id];
+      return agent && (agent.text || agent.isStreaming);
+    });
+    
     activeAgents.forEach((agentId) => {
       const agent = agents[agentId];
-      const position = getPositionForTurn(agentId, currentTurnIndex);
+      const position = getPositionForTurn(agentId, allAgentIds, currentTurnIndex);
       
       // Determine round for visual styling
-      let nodeRound = 1;
-      if (ROUND_2_AGENTS.includes(agentId)) nodeRound = 2;
-      if (ROUND_4_AGENTS.includes(agentId)) nodeRound = 4;
-      if (ROUND_5_AGENTS.includes(agentId)) nodeRound = 5;
+      const nodeRound = getAgentRound(agentId);
       
       nodes.push({
         id: `node-${agentId}`,
         type: 'agentThought',
         position,
         data: {
-          agentId,
+          agentId: agentId as AgentId,
           text: agent.text,
           isStreaming: agent.isStreaming,
           phase: nodeRound,
@@ -325,12 +331,18 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
       });
     }
     
-    // ═══ BLUE DEPENDS EDGES: Experts (Row 3) depend on Openers (Row 1) ═══
+    // Get all agent IDs from the store
+    const allAgentIds = Object.keys(agents);
+    
+    // ═══ BLUE DEPENDS EDGES: Experts (Row 4) depend on Openers (Row 1) ═══
     // Experts are BELOW openers, so: Expert TOP → Analyst BOTTOM
-    const expertsActive = ROUND_4_AGENTS.filter(id => agents[id].text || agents[id].isStreaming);
+    const expertsActive = allAgentIds.filter(id => {
+      const agent = agents[id];
+      return getAgentRound(id) === 4 && agent && (agent.text || agent.isStreaming);
+    });
     
     for (const expert of expertsActive) {
-      if (agents.analyst.text) {
+      if (agents.analyst?.text) {
         edges.push({
           id: `edge-${expert}-analyst`,
           source: `node-${expert}`,
@@ -345,9 +357,9 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
     
     // ═══ GREEN SUPPORTS EDGES: Synthesizer (Row 4) connects to Experts (Row 3) ═══
     // Synthesizer is BELOW experts, so: Synthesizer TOP → Expert BOTTOM
-    if (agents.synthesizer.text || agents.synthesizer.isStreaming) {
+    if (agents.synthesizer?.text || agents.synthesizer?.isStreaming) {
       for (const expert of expertsActive) {
-        if (agents[expert].text) {
+        if (agents[expert]?.text) {
           edges.push({
             id: `edge-synthesizer-${expert}`,
             source: 'node-synthesizer',
@@ -363,7 +375,7 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
 
     // ═══ GRAY "CONSTRAINT" EDGES: UserProxy connects only to streaming agents ═══
     if (constraints.length > 0) {
-      const streamingAgents = ALL_AGENTS.filter(id => agents[id].isStreaming);
+      const streamingAgents = allAgentIds.filter(id => agents[id]?.isStreaming);
       for (const agentId of streamingAgents) {
         edges.push({
           id: `edge-userproxy-${agentId}`,

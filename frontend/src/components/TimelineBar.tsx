@@ -19,15 +19,19 @@ interface TimelineBarProps {
   currentTps?: number;
 }
 
-export function TimelineBar({ 
+export function TimelineBar({
   elapsedMs,
   designMode = 'boxy',
-  currentTps = 0
+  currentTps: propTps = 0
 }: TimelineBarProps) {
   const checkpoints = useDebateStore((state) => state.checkpoints);
   const activeCheckpointIndex = useDebateStore((state) => state.activeCheckpointIndex);
   const debateStartTime = useDebateStore((state) => state.debateStartTime);
+  const globalTps = useDebateStore((state) => state.tokensPerSecond);
   const jumpToCheckpoint = useDebateStore((state) => state.jumpToCheckpoint);
+
+  // Use prop TPS if available (from agent metrics), otherwise fall back to global simulated TPS
+  const currentTps = propTps > 0 ? propTps : globalTps;
   const exitTimeTravel = useDebateStore((state) => state.exitTimeTravel);
 
   // Calculate max duration dynamically from last checkpoint or elapsed time

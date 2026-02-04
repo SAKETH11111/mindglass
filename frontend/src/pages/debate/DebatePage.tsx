@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Send, MessageSquarePlus } from 'lucide-react';
-import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
+import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type BaseAgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSessionStore } from '@/hooks/useSessionStore';
@@ -161,8 +161,8 @@ export function DebatePage() {
   const sessionIdParam = searchParams.get('session'); // Session ID for resuming
 
   // Parse selected agents from URL - if param exists, use it; otherwise will be set from session store
-  const agentsFromUrl = agentsParam 
-    ? agentsParam.split(',').filter(a => AGENT_IDS.includes(a as AgentId)) as AgentId[]
+  const agentsFromUrl = agentsParam
+    ? agentsParam.split(',').filter(a => AGENT_IDS.includes(a as BaseAgentId)) as BaseAgentId[]
     : null; // null means use session store's selection
 
   // Design mode toggle (matches homepage)

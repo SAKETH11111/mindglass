@@ -3,8 +3,8 @@ import { X } from 'lucide-react'
 import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from '@/types/agent'
 import type { AgentId } from '@/types/agent'
 
-// DiceBear Notionists avatar URLs
-const AGENT_AVATARS: Record<AgentId, string> = {
+// DiceBear Notionists avatar URLs - includes industry-specific agents
+const AGENT_AVATARS: Record<string, string> = {
   analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
   optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
   pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
@@ -13,10 +13,28 @@ const AGENT_AVATARS: Record<AgentId, string> = {
   finance: 'https://api.dicebear.com/7.x/notionists/svg?seed=banker&backgroundColor=transparent',
   risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=guardian&backgroundColor=transparent',
   synthesizer: 'https://api.dicebear.com/7.x/notionists/svg?seed=wizard&backgroundColor=transparent',
+  // SaaS
+  saas_metrics: 'https://api.dicebear.com/7.x/notionists/svg?seed=metrics&backgroundColor=transparent',
+  saas_growth: 'https://api.dicebear.com/7.x/notionists/svg?seed=growth&backgroundColor=transparent',
+  // E-commerce
+  ecommerce_conversion: 'https://api.dicebear.com/7.x/notionists/svg?seed=funnel&backgroundColor=transparent',
+  ecommerce_operations: 'https://api.dicebear.com/7.x/notionists/svg?seed=warehouse&backgroundColor=transparent',
+  // Fintech
+  fintech_compliance: 'https://api.dicebear.com/7.x/notionists/svg?seed=compliance&backgroundColor=transparent',
+  fintech_risk: 'https://api.dicebear.com/7.x/notionists/svg?seed=fraud&backgroundColor=transparent',
+  // Healthcare
+  healthcare_clinical: 'https://api.dicebear.com/7.x/notionists/svg?seed=doctor&backgroundColor=transparent',
+  healthcare_regulatory: 'https://api.dicebear.com/7.x/notionists/svg?seed=hipaa&backgroundColor=transparent',
+  // Manufacturing
+  manufacturing_operations: 'https://api.dicebear.com/7.x/notionists/svg?seed=factory&backgroundColor=transparent',
+  manufacturing_quality: 'https://api.dicebear.com/7.x/notionists/svg?seed=quality&backgroundColor=transparent',
+  // Consulting
+  consulting_client: 'https://api.dicebear.com/7.x/notionists/svg?seed=client&backgroundColor=transparent',
+  consulting_delivery: 'https://api.dicebear.com/7.x/notionists/svg?seed=delivery&backgroundColor=transparent',
 }
 
-// Agent role descriptions
-const AGENT_DESCRIPTIONS: Record<AgentId, string> = {
+// Agent role descriptions - includes industry-specific agents
+const AGENT_DESCRIPTIONS: Record<string, string> = {
   analyst: 'Breaks down complex problems into data-driven insights and identifies key patterns',
   optimist: 'Highlights opportunities, potential upsides, and best-case scenarios',
   pessimist: 'Surfaces risks, downsides, and worst-case scenarios to consider',
@@ -25,10 +43,28 @@ const AGENT_DESCRIPTIONS: Record<AgentId, string> = {
   finance: 'Evaluates economic implications, costs, and financial trade-offs',
   risk: 'Assesses threats, vulnerabilities, and mitigation strategies',
   synthesizer: 'Integrates all perspectives into a coherent, balanced conclusion',
+  // SaaS
+  saas_metrics: 'Analyzes MRR, ARR, CAC, LTV, churn rates and SaaS unit economics',
+  saas_growth: 'Evaluates PLG vs sales-led motions, pricing, and market positioning',
+  // E-commerce
+  ecommerce_conversion: 'Optimizes customer journey, conversion funnels, and CRO strategies',
+  ecommerce_operations: 'Manages fulfillment, logistics, inventory, and supply chain',
+  // Fintech
+  fintech_compliance: 'Navigates KYC/AML, licensing, and regulatory requirements',
+  fintech_risk: 'Assesses fraud, credit risk, and financial security implications',
+  // Healthcare
+  healthcare_clinical: 'Evaluates clinical evidence, patient outcomes, and care pathways',
+  healthcare_regulatory: 'Ensures HIPAA, FDA compliance and healthcare regulations',
+  // Manufacturing
+  manufacturing_operations: 'Optimizes production efficiency, lean processes, and supply chain',
+  manufacturing_quality: 'Ensures ISO, safety standards, and quality control compliance',
+  // Consulting
+  consulting_client: 'Manages client relationships, business development, and retention',
+  consulting_delivery: 'Oversees project delivery, resource utilization, and profitability',
 }
 
-// Agent expertise tags
-const AGENT_TAGS: Record<AgentId, string[]> = {
+// Agent expertise tags - includes industry-specific agents
+const AGENT_TAGS: Record<string, string[]> = {
   analyst: ['Data', 'Research', 'Patterns'],
   optimist: ['Opportunities', 'Growth', 'Potential'],
   pessimist: ['Caution', 'Risks', 'Contingency'],
@@ -37,6 +73,24 @@ const AGENT_TAGS: Record<AgentId, string[]> = {
   finance: ['Economics', 'ROI', 'Budgets'],
   risk: ['Security', 'Threats', 'Mitigation'],
   synthesizer: ['Integration', 'Balance', 'Summary'],
+  // SaaS
+  saas_metrics: ['MRR', 'Churn', 'Unit Economics'],
+  saas_growth: ['PLG', 'GTM', 'Pricing'],
+  // E-commerce
+  ecommerce_conversion: ['CRO', 'Funnels', 'UX'],
+  ecommerce_operations: ['Fulfillment', 'Logistics', '3PL'],
+  // Fintech
+  fintech_compliance: ['KYC/AML', 'Licensing', 'Regs'],
+  fintech_risk: ['Fraud', 'Credit', 'Security'],
+  // Healthcare
+  healthcare_clinical: ['Evidence', 'Outcomes', 'Care'],
+  healthcare_regulatory: ['HIPAA', 'FDA', 'Compliance'],
+  // Manufacturing
+  manufacturing_operations: ['Lean', 'Supply Chain', 'OEE'],
+  manufacturing_quality: ['ISO', 'QC', 'Safety'],
+  // Consulting
+  consulting_client: ['BD', 'Retention', 'Strategy'],
+  consulting_delivery: ['Utilization', 'PMO', 'Scope'],
 }
 
 interface AgentsPanelProps {
@@ -44,10 +98,14 @@ interface AgentsPanelProps {
   onClose: () => void
   activeAgentId?: AgentId | null
   designMode?: 'boxy' | 'round'
+  visibleAgents?: AgentId[]  // Optional - defaults to AGENT_IDS
 }
 
-export function AgentsPanel({ isOpen, onClose, activeAgentId, designMode = 'boxy' }: AgentsPanelProps) {
+export function AgentsPanel({ isOpen, onClose, activeAgentId, designMode = 'boxy', visibleAgents }: AgentsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  
+  // Use provided agents or default to base agents
+  const agentsToShow = visibleAgents || AGENT_IDS
 
   // Close on escape key and click outside
   useEffect(() => {
@@ -106,7 +164,7 @@ export function AgentsPanel({ isOpen, onClose, activeAgentId, designMode = 'boxy
         <div className={`flex items-center justify-between p-5 ${designMode === 'boxy' ? 'border-b-2 border-white/20 bg-white/[0.02]' : 'border-b border-white/10'}`}>
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
-              {AGENT_IDS.slice(0, 3).map((id) => (
+              {agentsToShow.slice(0, 3).map((id) => (
                 <div
                   key={id}
                   className={`w-6 h-6 border-2 border-black/50 overflow-hidden ${designMode === 'round' ? 'rounded-full' : ''}`}
@@ -121,7 +179,7 @@ export function AgentsPanel({ isOpen, onClose, activeAgentId, designMode = 'boxy
                 {designMode === 'boxy' ? 'AGENT ARRAY' : 'AI Agents'}
               </h2>
               <p className={`text-white/50 text-xs ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-                {designMode === 'boxy' ? '8 PERSPECTIVES ACTIVE' : '8 specialized perspectives analyze your decision'}
+                {designMode === 'boxy' ? `${agentsToShow.length} PERSPECTIVES ACTIVE` : `${agentsToShow.length} specialized perspectives analyze your decision`}
               </p>
             </div>
           </div>
@@ -142,7 +200,7 @@ export function AgentsPanel({ isOpen, onClose, activeAgentId, designMode = 'boxy
         {/* Agent Grid */}
         <div className="p-5 overflow-y-auto max-h-[calc(85vh-80px)]">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {AGENT_IDS.map((agentId, index) => {
+            {agentsToShow.map((agentId, index) => {
               const isActive = activeAgentId === agentId
               const color = AGENT_COLORS[agentId]
               const name = AGENT_NAMES[agentId]

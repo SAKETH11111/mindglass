@@ -18,7 +18,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Clock } from 'lucide-react';
-import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
+import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, getAgentIdsForIndustry } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { DebateCanvas } from '@/components/graph';
@@ -98,16 +98,27 @@ export function DebatePage() {
 
   const selectedAgentsFromUrl = agentsFromUrl || storeSelectedAgents;
 
+  // Get industry-specific agent IDs
+  const industryAgentIds = useMemo<AgentId[]>(() => {
+    return getAgentIdsForIndustry(industryParam || undefined);
+  }, [industryParam]);
+
   const effectiveSelectedAgents = useMemo<AgentId[]>(() => {
+    // If industry is set, use industry-specific agents
+    if (industryParam && industryParam !== 'any') {
+      return industryAgentIds;
+    }
+    // Otherwise use selected agents from URL or store
     const base: AgentId[] = (selectedAgentsFromUrl && selectedAgentsFromUrl.length > 0)
       ? selectedAgentsFromUrl
       : AGENT_IDS;
     return base.includes('synthesizer') ? base : [...base, 'synthesizer'];
-  }, [selectedAgentsFromUrl]);
+  }, [selectedAgentsFromUrl, industryParam, industryAgentIds]);
 
-  const visibleAgents = useMemo<AgentId[]>(() => (
-    AGENT_IDS.filter(id => effectiveSelectedAgents.includes(id))
-  ), [effectiveSelectedAgents]);
+  // Visible agents are the ones we should display in the UI
+  const visibleAgents = useMemo<AgentId[]>(() => {
+    return effectiveSelectedAgents;
+  }, [effectiveSelectedAgents]);
 
   // WebSocket
   const { isReady, startDebateSession, startFollowUpSession, injectConstraint } = useWebSocket();
@@ -181,11 +192,11 @@ export function DebatePage() {
   const lastSyncedResponses = useRef<Record<string, string>>({});
   useEffect(() => {
     effectiveSelectedAgents.forEach(agentId => {
-      const agentText = agents[agentId].text;
-      // Only update if text exists and has actually changed from last sync
-      if (agentText && agentText !== lastSyncedResponses.current[agentId]) {
-        lastSyncedResponses.current[agentId] = agentText;
-        updateTurnResponse(agentId, agentText);
+      const agent = agents[agentId];
+      // Only update if agent exists, text exists, and has actually changed from last sync
+      if (agent?.text && agent.text !== lastSyncedResponses.current[agentId]) {
+        lastSyncedResponses.current[agentId] = agent.text;
+        updateTurnResponse(agentId, agent.text);
       }
     });
   }, [agents, updateTurnResponse, effectiveSelectedAgents]);
@@ -363,8 +374,9 @@ export function DebatePage() {
             <div className="space-y-1">
               {visibleAgents.map((agentId) => {
                 const isSelected = selectedAgentId === agentId;
-                const color = AGENT_COLORS[agentId];
+                const color = AGENT_COLORS[agentId] || '#6B7280';
                 const agent = agents[agentId];
+                const name = AGENT_NAMES[agentId] || agentId;
 
                 return (
                   <button
@@ -381,16 +393,16 @@ export function DebatePage() {
                     >
                       <img
                         src={getAvatarUrl(agentId)}
-                        alt={AGENT_NAMES[agentId]}
+                        alt={name}
                         className="w-full h-full"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] text-white/90 truncate font-mono uppercase tracking-wider">
-                        {AGENT_NAMES[agentId]}
+                        {name}
                       </p>
                     </div>
-                    {agent.isStreaming && (
+                    {agent?.isStreaming && (
                       <div
                         className="w-2 h-2 flex-shrink-0 animate-pulse"
                         style={{ backgroundColor: color }}
