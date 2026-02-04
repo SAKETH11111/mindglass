@@ -13,6 +13,7 @@ export function useWebSocket() {
   const retryCount = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const pendingMessagesRef = useRef<object[]>([]);
 
   const {
     setConnectionState,
@@ -32,6 +33,9 @@ export function useWebSocket() {
   const apiKey = useApiKeyStore((state) => state.apiKey);
 
   const connect = useCallback(() => {
+    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
     try {
       setConnectionState('connecting');
       ws.current = new WebSocket(WS_URL);
@@ -41,6 +45,13 @@ export function useWebSocket() {
         setConnectionState('connected');
         retryCount.current = 0;
         setIsReady(true);
+        if (pendingMessagesRef.current.length > 0) {
+          const queue = [...pendingMessagesRef.current];
+          pendingMessagesRef.current = [];
+          queue.forEach((message) => {
+            ws.current?.send(JSON.stringify(message));
+          });
+        }
       };
 
       ws.current.onclose = () => {
@@ -205,8 +216,6 @@ export function useWebSocket() {
   }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
 
   useEffect(() => {
-    connect();
-
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
@@ -215,16 +224,18 @@ export function useWebSocket() {
         ws.current.close();
       }
     };
-  }, [connect]);
+  }, []);
 
   const sendMessage = useCallback((message: object) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify(message));
       return true;
     }
-    console.warn('WebSocket not ready, message not sent');
-    return false;
-  }, []);
+    pendingMessagesRef.current.push(message);
+    connect();
+    console.warn('WebSocket not ready, queued message');
+    return true;
+  }, [connect]);
 
   // Manual retry function for when automatic retries are exhausted
   const retry = useCallback(() => {

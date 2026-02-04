@@ -185,7 +185,7 @@ export function DebatePage() {
 
   // Start debate on mount
   useEffect(() => {
-    if (isReady && query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
+    if (query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
       hasStartedRef.current = true;
       debateStartTime.current = Date.now();
 
@@ -199,7 +199,7 @@ export function DebatePage() {
       startNewTurn(query);
       startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam);
     }
-  }, [isReady, query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, agentsFromUrl, setSelectedAgents, industryParam]);
+  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, agentsFromUrl, setSelectedAgents, industryParam]);
 
   // Mark turn complete when debate ends
   useEffect(() => {

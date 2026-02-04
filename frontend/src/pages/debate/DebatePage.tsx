@@ -267,7 +267,7 @@ export function DebatePage() {
 
   // Start debate when connected and query is present
   useEffect(() => {
-    if (isReady && query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
+    if (query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
       hasStartedRef.current = true;
       debateStartTime.current = Date.now();
       
@@ -283,7 +283,7 @@ export function DebatePage() {
       // Start the debate with context and agent selection
       startDebateSession(query, modelTier, previousContext, selectedAgentsFromUrl);
     }
-  }, [isReady, query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, selectedAgentsFromUrl]);
+  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, selectedAgentsFromUrl]);
 
   // Mark turn complete when debate ends
   useEffect(() => {
