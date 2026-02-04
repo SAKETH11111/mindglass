@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Send, Clock, Settings } from 'lucide-react'
-import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry, type AgentId } from './types/agent'
+import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry } from './types/agent'
 import { DebatePage } from '@/pages/debate'
 import { HistorySidebar } from '@/components/HistorySidebar'
 import { AgentManagerWindow } from '@/components/AgentManagerWindow'
