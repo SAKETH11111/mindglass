@@ -113,7 +113,7 @@ export function ApiKeyPrompt() {
 
         {/* Note */}
         <p className="text-[10px] text-white/30 mt-6 text-center font-mono">
-          Your API key is stored locally and never sent to our servers.
+          Your API key is stored locally and sent only to run your sessions. It is not stored on our servers.
           <br />
           You can add it later from the settings menu.
         </p>

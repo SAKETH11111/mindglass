@@ -6,6 +6,7 @@ WebSocket-enabled real-time debate visualization platform
 import json
 import asyncio
 import uuid
+import re
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
@@ -38,6 +39,10 @@ app.add_middleware(
 
 # Initialize orchestrator for multi-agent debates
 orchestrator = DebateOrchestrator()
+
+def is_valid_api_key(api_key: str) -> bool:
+    """Basic format validation for Cerebras API keys."""
+    return bool(re.match(r"^csk-[A-Za-z0-9]{10,}$", api_key))
 
 
 @app.get("/api/health")
@@ -88,10 +93,24 @@ async def websocket_endpoint(websocket: WebSocket):
     stream_task: asyncio.Task | None = None
     stream_id: str | None = None
 
-    async def run_stream(query: str, model: str, previous_context: str = "", selected_agents: list = None, industry: str = ""):
+    async def run_stream(
+        query: str,
+        model: str,
+        previous_context: str = "",
+        selected_agents: list = None,
+        industry: str = "",
+        api_key: str | None = None,
+    ):
         try:
             print(f"[{datetime.now().isoformat()}] Stream start id={stream_id} model={model} industry={industry or 'generic'}")
-            async for token in orchestrator.stream_debate(query, model, previous_context, selected_agents, industry):
+            async for token in orchestrator.stream_debate(
+                query,
+                model,
+                previous_context,
+                selected_agents,
+                industry,
+                api_key_override=api_key,
+            ):
                 await websocket.send_json(token)
             await websocket.send_json(create_debate_complete())
             print(f"[{datetime.now().isoformat()}] Debate complete")
@@ -109,8 +128,11 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Receive message
             data = await websocket.receive_text()
-            print(f"[{datetime.now().isoformat()}] WS recv: {data}")
             message = json.loads(data)
+            log_message = message.copy()
+            if "apiKey" in log_message:
+                log_message["apiKey"] = "***redacted***"
+            print(f"[{datetime.now().isoformat()}] WS recv: {log_message}")
 
             # Handle start_debate message
             if message.get("type") == "start_debate":
@@ -119,6 +141,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 previous_context = message.get("previousContext", "")  # Context from previous turns
                 selected_agents = message.get("selectedAgents", None)  # Which agents to include
                 industry = message.get("industry", "")  # Industry context for tailored advice
+                api_key = (message.get("apiKey") or "").strip() or None
+
+                if api_key and not is_valid_api_key(api_key):
+                    await websocket.send_json(
+                        create_error("Invalid API key format. Expected a Cerebras key like csk-...")
+                    )
+                    continue
+
+                if not api_key and not settings.CEREBRAS_API_KEY:
+                    await websocket.send_json(
+                        create_error("Server is missing CEREBRAS_API_KEY. Provide your own API key in settings.")
+                    )
+                    continue
 
                 # Validate query is not empty
                 if not query:
@@ -137,7 +172,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Start streaming in the background so we can handle injects
                 stream_id = str(uuid.uuid4())
-                stream_task = asyncio.create_task(run_stream(query, model, previous_context, selected_agents, industry))
+                stream_task = asyncio.create_task(
+                    run_stream(query, model, previous_context, selected_agents, industry, api_key)
+                )
 
             elif message.get("type") == "inject_constraint":
                 # PRD Feature: Interrupt & Inject constraint mid-debate

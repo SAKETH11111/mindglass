@@ -71,7 +71,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               className="w-full bg-[#111] border border-white/20 px-4 py-3 text-sm font-mono text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-colors"
             />
             <p className="text-[10px] text-white/30 mt-2 font-mono">
-              Stored locally in your browser. Never sent to our servers.
+              Stored locally in your browser. Sent only to run your sessions and not stored on our servers.
             </p>
           </div>
 

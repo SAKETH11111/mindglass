@@ -16,7 +16,7 @@ class OptimistAgent(LLMAgent):
     Identifies opportunities and positive outcomes.
     """
 
-    def __init__(self):
+    def __init__(self, api_key: str | None = None):
         super().__init__(
             agent_id="optimist",
             name="Optimist",
@@ -25,10 +25,10 @@ class OptimistAgent(LLMAgent):
             model="llama-3.3-70b"
         )
         self.color = "#E78A53"
-        api_key = settings.CEREBRAS_API_KEY
-        if not api_key:
+        resolved_key = api_key or settings.CEREBRAS_API_KEY
+        if not resolved_key:
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
-        self.client = Cerebras(api_key=api_key)
+        self.client = Cerebras(api_key=resolved_key)
 
     async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
         """

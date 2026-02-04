@@ -100,8 +100,6 @@ interface DebateState {
   followUpNodes: FollowUpNode[]; // User's follow-up questions
   currentTurnIndex: number; // 0 = first turn, 1 = after first follow-up, etc.
 
-  // Custom API key for fallback when backend has issues
-  customApiKey: string | null;
   showApiKeyModal: boolean;
 
   // Actions
@@ -148,7 +146,6 @@ interface DebateState {
   clearConversation: () => void; // Reset all turns and follow-ups
 
   // Custom API key actions
-  setCustomApiKey: (key: string | null) => void;
   setShowApiKeyModal: (show: boolean) => void;
 
   // Simulated TPS for demo
@@ -211,7 +208,6 @@ const initialState = {
   followUpNodes: [] as FollowUpNode[],
   currentTurnIndex: 0,
   // Custom API key
-  customApiKey: null as string | null,
   showApiKeyModal: false,
 };
 
@@ -614,8 +610,6 @@ export const useDebateStore = create<DebateState>()(
         edges: [],
       }),
 
-    // Custom API key actions
-    setCustomApiKey: (key) => set({ customApiKey: key }),
     setShowApiKeyModal: (show) => set({ showApiKeyModal: show }),
 
     // Simulated TPS for demo (random between 1800-2500)

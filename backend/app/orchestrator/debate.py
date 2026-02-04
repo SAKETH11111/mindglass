@@ -105,11 +105,11 @@ class DebateOrchestrator:
         # Industry context for tailored advice
         self.industry: str = ""
     
-    def _initialize_agents(self, industry: str = ""):
+    def _initialize_agents(self, industry: str = "", api_key_override: str | None = None):
         """Initialize agents based on industry context."""
         registry = get_industry_agent_registry(industry) if industry else AGENT_REGISTRY
         self.agents = {
-            agent_id: AgentClass()
+            agent_id: AgentClass(api_key=api_key_override)
             for agent_id, AgentClass in registry.items()
         }
         print(f"[{datetime.now().isoformat()}] Initialized agents for industry '{industry or 'any'}': {list(self.agents.keys())}")
@@ -123,7 +123,15 @@ class DebateOrchestrator:
             print(f"[{datetime.now().isoformat()}] Restart requested for round {self._current_round_num}")
             self._interrupt_event.set()
 
-    async def stream_debate(self, query: str, model: str = "pro", previous_context: str = "", selected_agents: List[str] = None, industry: str = "") -> AsyncGenerator[Dict[str, Any], None]:
+    async def stream_debate(
+        self,
+        query: str,
+        model: str = "pro",
+        previous_context: str = "",
+        selected_agents: List[str] = None,
+        industry: str = "",
+        api_key_override: str | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a multi-round debate where agents respond to each other.
 
@@ -147,7 +155,7 @@ class DebateOrchestrator:
         self.industry = industry or ""  # Store industry context
         
         # Initialize agents based on industry (creates industry-specific specialists)
-        self._initialize_agents(self.industry)
+        self._initialize_agents(self.industry, api_key_override=api_key_override)
         
         # Get the appropriate agent IDs for this industry
         industry_agent_ids = get_industry_agent_ids(self.industry) if self.industry else ALL_AGENT_IDS

@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { useDebateStore } from '@/hooks/useDebateStore';
+import { useApiKeyStore } from '@/hooks/useApiKeyStore';
 import { X, ExternalLink, AlertTriangle } from 'lucide-react';
 
 export function ApiKeyModal() {
-  const { showApiKeyModal, setShowApiKeyModal, setCustomApiKey, customApiKey } = useDebateStore();
-  const [inputKey, setInputKey] = useState(customApiKey || '');
+  const { showApiKeyModal, setShowApiKeyModal, error, setError } = useDebateStore();
+  const { apiKey, setApiKey } = useApiKeyStore();
+  const [inputKey, setInputKey] = useState(apiKey || '');
   const [isSaved, setIsSaved] = useState(false);
 
   if (!showApiKeyModal) return null;
 
   const handleSave = () => {
     if (inputKey.trim()) {
-      setCustomApiKey(inputKey.trim());
+      setApiKey(inputKey.trim());
+      setError(null);
       setIsSaved(true);
       setTimeout(() => {
         setShowApiKeyModal(false);
@@ -22,6 +25,7 @@ export function ApiKeyModal() {
 
   const handleClose = () => {
     setShowApiKeyModal(false);
+    setError(null);
   };
 
   const handleGetApiKey = () => {
@@ -55,9 +59,15 @@ export function ApiKeyModal() {
         </div>
 
         {/* Description */}
-        <p className="text-sm text-white/70 mb-6 leading-relaxed">
+        <p className="text-sm text-white/70 mb-3 leading-relaxed">
           Our shared API key may be experiencing rate limits. You can use your own Cerebras API key to continue without interruptions.
         </p>
+
+        {error && (
+          <div className="mb-4 border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200 font-mono">
+            {error}
+          </div>
+        )}
 
         {/* Input */}
         <div className="space-y-4">
@@ -107,7 +117,7 @@ export function ApiKeyModal() {
 
         {/* Note */}
         <p className="text-[10px] text-white/30 mt-4 text-center font-mono">
-          Your API key is stored locally in your browser and never sent to our servers.
+          Your API key is stored locally in your browser and sent only to run your sessions. It is not stored on our servers.
         </p>
       </div>
     </div>

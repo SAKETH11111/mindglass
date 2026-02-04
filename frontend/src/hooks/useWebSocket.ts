@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDebateStore } from '@/hooks/useDebateStore';
+import { useApiKeyStore } from '@/hooks/useApiKeyStore';
 import type { WebSocketMessage } from '@/types';
 import type { Phase, AgentId } from '@/types/agent';
 
@@ -28,6 +29,7 @@ export function useWebSocket() {
     setUserProxyNode,
     setShowApiKeyModal,
   } = useDebateStore();
+  const apiKey = useApiKeyStore((state) => state.apiKey);
 
   const connect = useCallback(() => {
     try {
@@ -245,6 +247,7 @@ export function useWebSocket() {
     // Update local state first with industry for proper agent initialization
     startDebate(query, industry);
     // Send to server with model selection, context, and agent selection
+    const resolvedApiKey = apiKey?.trim() || undefined;
     return sendMessage({
       type: 'start_debate',
       query,
@@ -252,8 +255,9 @@ export function useWebSocket() {
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
       industry: industry || '',
+      ...(resolvedApiKey ? { apiKey: resolvedApiKey } : {}),
     });
-  }, [sendMessage, startDebate]);
+  }, [sendMessage, startDebate, apiKey]);
 
   // Start a follow-up debate WITHOUT resetting store state (for multi-turn conversations)
   const startFollowUpSession = useCallback((
@@ -265,6 +269,7 @@ export function useWebSocket() {
   ) => {
     // DON'T call startDebate - it resets completedTurns/followUpNodes
     // Just send the message to the server
+    const resolvedApiKey = apiKey?.trim() || undefined;
     return sendMessage({ 
       type: 'start_debate', 
       query, 
@@ -272,8 +277,9 @@ export function useWebSocket() {
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
       industry: industry || '',
+      ...(resolvedApiKey ? { apiKey: resolvedApiKey } : {}),
     });
-  }, [sendMessage]);
+  }, [sendMessage, apiKey]);
 
   // Inject a constraint mid-debate (PRD: Interrupt & Inject feature)
   const injectConstraint = useCallback((constraint: string): boolean => {

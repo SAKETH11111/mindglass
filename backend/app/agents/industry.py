@@ -21,7 +21,7 @@ def create_industry_agent_class(
     Factory function to create industry-specific agent classes.
     """
     class IndustryAgent(LLMAgent):
-        def __init__(self):
+        def __init__(self, api_key: str | None = None):
             super().__init__(
                 agent_id=agent_id,
                 name=name,
@@ -30,10 +30,10 @@ def create_industry_agent_class(
                 model="llama-3.3-70b"
             )
             self.color = color
-            api_key = settings.CEREBRAS_API_KEY
-            if not api_key:
+            resolved_key = api_key or settings.CEREBRAS_API_KEY
+            if not resolved_key:
                 raise ValueError("CEREBRAS_API_KEY environment variable not set")
-            self.client = Cerebras(api_key=api_key)
+            self.client = Cerebras(api_key=resolved_key)
 
         async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
             """Stream a response using Cerebras API."""

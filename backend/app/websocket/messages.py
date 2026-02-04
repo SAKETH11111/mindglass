@@ -13,8 +13,11 @@ class StartDebateMessage(TypedDict):
     """Message to start a debate with a query"""
     type: Literal["start_debate"]
     query: str
+    model: Optional[str]
     previousContext: Optional[str]  # Context from previous turns in the session
     selectedAgents: Optional[List[str]]  # Which agents to include (defaults to all)
+    industry: Optional[str]  # Industry context for tailored advice
+    apiKey: Optional[str]  # Optional user-provided Cerebras API key
 
 
 # Outbound messages (server → client)

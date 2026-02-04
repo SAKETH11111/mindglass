@@ -3,6 +3,11 @@ import type { AgentId, Phase } from './agent';
 export interface StartDebateMessage {
   type: 'start_debate';
   query: string;
+  model?: string;
+  previousContext?: string;
+  selectedAgents?: AgentId[] | null;
+  industry?: string;
+  apiKey?: string;
 }
 
 export interface AgentTokenMessage {
