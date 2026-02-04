@@ -2,11 +2,11 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Send, Clock } from 'lucide-react'
 import { AGENT_COLORS, AGENT_NAMES } from './types/agent'
-import type { AgentId } from './types/agent'
 import { DebatePage } from '@/pages/debate'
 import { HistorySidebar } from '@/components/HistorySidebar'
 import { AgentManagerWindow } from '@/components/AgentManagerWindow'
 import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
+import { IndustrySelector, type IndustryType } from '@/components/IndustrySelector'
 import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
 import { DotMatrixText } from '@/components/DotMatrixText'
 import { useSessionStore } from '@/hooks/useSessionStore'
@@ -14,7 +14,7 @@ import { useDebateStore } from '@/hooks/useDebateStore'
 import { ApiKeyModal } from '@/components/ApiKeyModal'
 
 // DiceBear Notionists avatar URLs for each agent
-const AGENT_AVATARS: Record<AgentId, string> = {
+const AGENT_AVATARS: Record<string, string> = {
   analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
   optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
   pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
@@ -29,6 +29,7 @@ function HomePage() {
   const [inputValue, setInputValue] = useState("")
   const [isFocused, setIsFocused] = useState(false)
   const [selectedTier, setSelectedTier] = useState<ModelTier>('fast')
+  const [selectedIndustry, setSelectedIndustry] = useState<IndustryType>('any')
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isAgentWindowOpen, setIsAgentWindowOpen] = useState(false)
   const agentAvatarsRef = useRef<HTMLButtonElement>(null)
@@ -64,7 +65,8 @@ function HomePage() {
     // Navigate to debate page with query and selected model tier
     // Always include agents param to ensure correct selection
     const agentsParam = `&agents=${selectedAgents.join(',')}`
-    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}${agentsParam}`)
+    const industryParam = selectedIndustry !== 'any' ? `&industry=${selectedIndustry}` : ''
+    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}${agentsParam}${industryParam}`)
   }, [inputValue, navigate, selectedTier, selectedAgents, createSession, resetDebate])
 
   const handleSelectSession = useCallback((sessionId: string) => {
@@ -182,15 +184,11 @@ function HomePage() {
               <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-white/10">
                 {/* Left side - attach button and model selector */}
                 <div className="flex items-center gap-2">
-                  {/* Attach button */}
-                  <button
-                    type="button"
-                    className="w-8 h-8 flex items-center justify-center border text-white/50 hover:text-white transition-all duration-200 border-white/20 hover:border-white/50 hover:bg-white/10"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                  </button>
+                  {/* Industry Selector */}
+                  <IndustrySelector
+                    selectedIndustry={selectedIndustry}
+                    onIndustryChange={setSelectedIndustry}
+                  />
 
                   {/* Model Selector */}
                   <ModelSelector

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from app.orchestrator.debate import DebateOrchestrator
 from app.websocket.messages import create_debate_complete, create_error
 from app.config import settings
+from app.agents.industry import get_industry_agent_info, INDUSTRY_AGENTS
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +49,31 @@ async def health_check():
     }
 
 
+@app.get("/api/industries")
+async def get_industries():
+    """Get list of available industries and their specialized agents"""
+    return {
+        "industries": list(INDUSTRY_AGENTS.keys()),
+        "agents": {
+            industry: {
+                agent_id: {
+                    "name": config["name"],
+                    "color": config["color"],
+                    "description": config["description"]
+                }
+                for agent_id, config in agents.items()
+            }
+            for industry, agents in INDUSTRY_AGENTS.items()
+        }
+    }
+
+
+@app.get("/api/agents/{industry}")
+async def get_agents_for_industry(industry: str):
+    """Get agent info for a specific industry"""
+    return get_industry_agent_info(industry if industry != "any" else None)
+
+
 @app.websocket("/ws/debate")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -62,10 +88,10 @@ async def websocket_endpoint(websocket: WebSocket):
     stream_task: asyncio.Task | None = None
     stream_id: str | None = None
 
-    async def run_stream(query: str, model: str, previous_context: str = "", selected_agents: list = None):
+    async def run_stream(query: str, model: str, previous_context: str = "", selected_agents: list = None, industry: str = ""):
         try:
-            print(f"[{datetime.now().isoformat()}] Stream start id={stream_id} model={model}")
-            async for token in orchestrator.stream_debate(query, model, previous_context, selected_agents):
+            print(f"[{datetime.now().isoformat()}] Stream start id={stream_id} model={model} industry={industry or 'generic'}")
+            async for token in orchestrator.stream_debate(query, model, previous_context, selected_agents, industry):
                 await websocket.send_json(token)
             await websocket.send_json(create_debate_complete())
             print(f"[{datetime.now().isoformat()}] Debate complete")
@@ -92,13 +118,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 model = message.get("model", "pro")  # Default to 'pro' tier
                 previous_context = message.get("previousContext", "")  # Context from previous turns
                 selected_agents = message.get("selectedAgents", None)  # Which agents to include
+                industry = message.get("industry", "")  # Industry context for tailored advice
 
                 # Validate query is not empty
                 if not query:
                     await websocket.send_json(create_error("Query cannot be empty"))
                     continue
 
-                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'}")
+                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'} | Industry: {industry or 'generic'}")
                 if previous_context:
                     print(f"[{datetime.now().isoformat()}] Previous context length: {len(previous_context)} chars")
 
@@ -110,7 +137,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Start streaming in the background so we can handle injects
                 stream_id = str(uuid.uuid4())
-                stream_task = asyncio.create_task(run_stream(query, model, previous_context, selected_agents))
+                stream_task = asyncio.create_task(run_stream(query, model, previous_context, selected_agents, industry))
 
             elif message.get("type") == "inject_constraint":
                 # PRD Feature: Interrupt & Inject constraint mid-debate

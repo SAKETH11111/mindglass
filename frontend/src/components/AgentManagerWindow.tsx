@@ -1,10 +1,10 @@
 import { X, Check, Users } from 'lucide-react';
 import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from '@/types/agent';
-import type { AgentId } from '@/types/agent';
+
 import { useSessionStore } from '@/hooks/useSessionStore';
 
 // DiceBear Notionists avatar URLs
-const AGENT_AVATARS: Record<AgentId, string> = {
+const AGENT_AVATARS: Record<string, string> = {
   analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
   optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
   pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
@@ -16,7 +16,7 @@ const AGENT_AVATARS: Record<AgentId, string> = {
 };
 
 // Short descriptions
-const AGENT_SHORT_DESC: Record<AgentId, string> = {
+const AGENT_SHORT_DESC: Record<string, string> = {
   analyst: 'Data & pattern analysis',
   optimist: 'Opportunities & potential',
   pessimist: 'Risks & downsides',

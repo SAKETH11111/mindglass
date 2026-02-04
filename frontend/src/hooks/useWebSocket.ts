@@ -237,10 +237,11 @@ export function useWebSocket() {
     query: string,
     model?: string,
     previousContext?: string,
-    selectedAgents?: AgentId[]
+    selectedAgents?: AgentId[],
+    industry?: string
   ) => {
-    // Update local state first
-    startDebate(query);
+    // Update local state first with industry for proper agent initialization
+    startDebate(query, industry);
     // Start simulated TPS for demo (random 1800-2500)
     startSimulatedTps();
     // Send to server with model selection, context, and agent selection
@@ -250,6 +251,7 @@ export function useWebSocket() {
       model: model || 'pro',
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
+      industry: industry || '',
     });
   }, [sendMessage, startDebate, startSimulatedTps]);
 
@@ -258,7 +260,8 @@ export function useWebSocket() {
     query: string, 
     model?: string, 
     previousContext?: string,
-    selectedAgents?: AgentId[]
+    selectedAgents?: AgentId[],
+    industry?: string
   ) => {
     // DON'T call startDebate - it resets completedTurns/followUpNodes
     // Just send the message to the server
@@ -268,6 +271,7 @@ export function useWebSocket() {
       model: model || 'pro',
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
+      industry: industry || '',
     });
   }, [sendMessage]);
 

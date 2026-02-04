@@ -7,6 +7,7 @@ import {
   AGENT_IDS,
   AGENT_COLORS,
   AGENT_NAMES,
+  getAgentIdsForIndustry,
 } from '@/types/agent';
 import type { GraphNode, GraphEdge } from '@/types/graph';
 
@@ -18,17 +19,17 @@ export interface Checkpoint {
   timestamp: number;  // ms since debate start
   type: 'agent_done' | 'round_start' | 'constraint';
   label: string;
-  agentId?: AgentId;
+  agentId?: string;  // Can be any agent ID including industry-specific
   roundName?: string;
   // Snapshot of all agent texts at this moment
-  agentTexts: Record<AgentId, string>;
+  agentTexts: Record<string, string>;
 }
 
 // A completed debate turn (for follow-up questions)
 export interface DebateTurnSnapshot {
   id: string;
   query: string;
-  agentTexts: Record<AgentId, string>;
+  agentTexts: Record<string, string>;
   timestamp: number;
 }
 
@@ -52,13 +53,16 @@ interface DebateState {
   query: string;
   isDebating: boolean;
 
-  // Agents (all 8)
-  agents: Record<AgentId, AgentState>;
+  // Agents (can be base or industry-specific)
+  agents: Record<string, AgentState>;
+
+  // Currently active industry (to know which agents to display)
+  currentIndustry: string | null;
 
   // Legacy compat (for original HomePage)
   agentText: string;
   isStreaming: boolean;
-  currentAgentId: AgentId | null;
+  currentAgentId: string | null;
 
   // Metrics
   tokensPerSecond: number;
@@ -94,17 +98,18 @@ interface DebateState {
 
   // Actions
   setConnectionState: (state: ConnectionState) => void;
-  startDebate: (query: string) => void;
-  appendToken: (agentId: AgentId, content: string) => void;
-  setAgentMetrics: (agentId: AgentId, tokensPerSecond: number, totalTokens: number) => void;
-  setPhase: (phase: Phase, activeAgents: AgentId[]) => void;
-  setAgentDone: (agentId: AgentId) => void;
-  setAgentError: (agentId: AgentId, error: string) => void;
+  startDebate: (query: string, industry?: string) => void;
+  appendToken: (agentId: string, content: string) => void;
+  setAgentMetrics: (agentId: string, tokensPerSecond: number, totalTokens: number) => void;
+  setPhase: (phase: Phase, activeAgents: string[]) => void;
+  setAgentDone: (agentId: string) => void;
+  setAgentError: (agentId: string, error: string) => void;
   updateMetrics: (tokensPerSecond: number, totalTokens: number) => void;
   endDebate: () => void;
   resetDebate: () => void;
   setError: (error: string | null) => void;
   clearResponse: () => void;
+  initializeAgentsForIndustry: (industry?: string) => void;
 
   // Graph actions
   addNode: (node: GraphNode) => void;
@@ -143,14 +148,16 @@ interface DebateState {
   stopSimulatedTps: () => void;
 }
 
-const createInitialAgents = (): Record<AgentId, AgentState> => {
-  const agents: Partial<Record<AgentId, AgentState>> = {};
-  for (const id of AGENT_IDS) {
+const createInitialAgents = (industry?: string): Record<string, AgentState> => {
+  const agents: Record<string, AgentState> = {};
+  const agentIds = getAgentIdsForIndustry(industry);
+  
+  for (const id of agentIds) {
     agents[id] = {
       id,
-      name: AGENT_NAMES[id],
+      name: AGENT_NAMES[id] || id,
       text: '',
-      color: AGENT_COLORS[id],
+      color: AGENT_COLORS[id] || '#6B7280',
       phase: null,
       isActive: false,
       isStreaming: false,
@@ -159,7 +166,7 @@ const createInitialAgents = (): Record<AgentId, AgentState> => {
       streamStartTime: null,
     };
   }
-  return agents as Record<AgentId, AgentState>;
+  return agents;
 };
 
 const initialState = {
@@ -168,10 +175,11 @@ const initialState = {
   query: '',
   isDebating: false,
   agents: createInitialAgents(),
+  currentIndustry: null as string | null,
   // Legacy compat
   agentText: '',
   isStreaming: false,
-  currentAgentId: null as AgentId | null,
+  currentAgentId: null as string | null,
   // Metrics
   tokensPerSecond: 0,
   totalTokens: 0,
@@ -201,12 +209,13 @@ export const useDebateStore = create<DebateState>()(
 
     setConnectionState: (connectionState) => set({ connectionState }),
 
-    startDebate: (query) =>
+    startDebate: (query, industry) =>
       set({
         query,
         phase: 'idle',
         isDebating: true,
-        agents: createInitialAgents(),
+        agents: createInitialAgents(industry),
+        currentIndustry: industry || null,
         tokensPerSecond: 0,
         totalTokens: 0,
         error: null,
@@ -224,9 +233,31 @@ export const useDebateStore = create<DebateState>()(
         currentTurnIndex: 0,
       }),
 
+    initializeAgentsForIndustry: (industry) =>
+      set({
+        agents: createInitialAgents(industry),
+        currentIndustry: industry || null,
+      }),
+
     appendToken: (agentId, content) =>
       set((state) => {
-        const agent = state.agents[agentId];
+        // Handle dynamic agent creation if agent doesn't exist
+        let agent = state.agents[agentId];
+        if (!agent) {
+          agent = {
+            id: agentId,
+            name: AGENT_NAMES[agentId] || agentId,
+            text: '',
+            color: AGENT_COLORS[agentId] || '#6B7280',
+            phase: null,
+            isActive: true,
+            isStreaming: true,
+            tokenCount: 0,
+            tokensPerSecond: 0,
+            streamStartTime: Date.now(),
+          };
+        }
+        
         const now = Date.now();
 
         // Initialize streamStartTime if this is the first token

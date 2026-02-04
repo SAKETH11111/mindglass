@@ -27,7 +27,7 @@ import { useSessionStore } from '@/hooks/useSessionStore';
 import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
 
 // DiceBear avatar
-const getAvatarUrl = (agentId: AgentId) => {
+const getAvatarUrl = (agentId: string) => {
   // Use 'leader' seed for synthesizer for a more professional/confident look
   const seed = agentId === 'synthesizer' ? 'leader' : agentId;
   return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=transparent`;
@@ -58,6 +58,7 @@ export function DebatePage() {
   const modelTier = searchParams.get('model') || 'pro';
   const agentsParam = searchParams.get('agents');
   const sessionIdParam = searchParams.get('session');
+  const industryParam = searchParams.get('industry') || '';
 
   // State
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -67,9 +68,9 @@ export function DebatePage() {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const hasStartedRef = useRef(false);
 
-  // Parse selected agents from URL
+  // Parse selected agents from URL (accepts any valid agent IDs)
   const agentsFromUrl = agentsParam
-    ? agentsParam.split(',').filter(a => AGENT_IDS.includes(a as AgentId)) as AgentId[]
+    ? agentsParam.split(',').filter(a => a.length > 0) as AgentId[]
     : null;
 
   // Store
@@ -164,9 +165,9 @@ export function DebatePage() {
 
       const previousContext = getPreviousTurnsContext();
       startNewTurn(query);
-      startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents);
+      startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam);
     }
-  }, [isReady, query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, agentsFromUrl, setSelectedAgents]);
+  }, [isReady, query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, agentsFromUrl, setSelectedAgents, industryParam]);
 
   // Mark turn complete when debate ends
   useEffect(() => {

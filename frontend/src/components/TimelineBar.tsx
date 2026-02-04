@@ -179,28 +179,33 @@ export function TimelineBar({
         />
       </div>
 
-      {/* Checkpoint legend */}
-      {checkpoints.length > 0 && (
-        <div className={`h-8 px-6 flex items-center gap-4 border-t ${designMode === 'boxy' ? 'border-white/5' : 'border-white/[0.03]'}`}>
-          <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
-            {checkpoints.length} {designMode === 'boxy' ? 'CHECKPOINTS' : 'checkpoints'}
-          </span>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
-              <div className={`w-2 h-2 bg-[#5F8787] ${designMode === 'round' ? 'rounded-full' : ''}`} />
-              <span className={`text-[9px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
-                {designMode === 'boxy' ? 'AGENT DONE' : 'Agent done'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className={`w-2 h-2 bg-[#888888] ${designMode === 'round' ? 'rounded-full' : ''}`} />
-              <span className={`text-[9px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
-                {designMode === 'boxy' ? 'YOUR INPUT' : 'Your input'}
-              </span>
-            </div>
-          </div>
+      {/* Cerebras Speed Callout */}
+      <div className={`h-8 px-6 flex items-center justify-between border-t ${designMode === 'boxy' ? 'border-white/5' : 'border-white/[0.03]'}`}>
+        <div className="flex items-center gap-4">
+          {checkpoints.length > 0 && (
+            <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
+              {checkpoints.length} {designMode === 'boxy' ? 'CHECKPOINTS' : 'checkpoints'}
+            </span>
+          )}
         </div>
-      )}
+        
+        {/* Speed comparison - dynamic Xx faster calculation */}
+        {(elapsedMs > 1000) && (() => {
+          const elapsedSec = Math.ceil(elapsedMs / 1000);
+          const gpuBaselineSec = 120; // Traditional GPU inference baseline for 8 agents
+          const speedupX = Math.round(gpuBaselineSec / elapsedSec);
+          return (
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] text-[#F15A29] font-bold ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
+                ⚡ {speedupX}x {designMode === 'boxy' ? 'FASTER' : 'faster'}
+              </span>
+              <span className={`text-[9px] text-white/30 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
+                ({elapsedSec}s vs ~{gpuBaselineSec}s {designMode === 'boxy' ? 'ON TRADITIONAL GPUS' : 'on traditional GPUs'})
+              </span>
+            </div>
+          );
+        })()}
+      </div>
     </div>
   );
 }

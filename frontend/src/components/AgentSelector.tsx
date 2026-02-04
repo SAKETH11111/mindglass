@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { X, Check, Users } from 'lucide-react';
 import { AGENT_COLORS, AGENT_NAMES, AGENT_IDS } from '@/types/agent';
-import type { AgentId } from '@/types/agent';
+
 import { useSessionStore } from '@/hooks/useSessionStore';
 
 // DiceBear Notionists avatar URLs
-const AGENT_AVATARS: Record<AgentId, string> = {
+const AGENT_AVATARS: Record<string, string> = {
   analyst: 'https://api.dicebear.com/7.x/notionists/svg?seed=analyst&backgroundColor=transparent',
   optimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=sunny&backgroundColor=transparent',
   pessimist: 'https://api.dicebear.com/7.x/notionists/svg?seed=cloudy&backgroundColor=transparent',
@@ -17,7 +17,7 @@ const AGENT_AVATARS: Record<AgentId, string> = {
 };
 
 // Agent role descriptions - framed as "consultant" expertise
-const AGENT_DESCRIPTIONS: Record<AgentId, string> = {
+const AGENT_DESCRIPTIONS: Record<string, string> = {
   analyst: 'Breaks down your situation with data-driven insights and pattern recognition',
   optimist: 'Identifies opportunities, growth potential, and best-case outcomes',
   pessimist: 'Surfaces risks, blind spots, and what could go wrong',
