@@ -17,7 +17,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { BarChart3, Clock } from 'lucide-react';
+import { BarChart3, Clock, GitBranch } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, getAgentIdsForIndustry } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -67,6 +67,7 @@ export function DebatePage() {
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isBenchOpen, setIsBenchOpen] = useState(false);
+  const [isScenariosOpen, setIsScenariosOpen] = useState(false);
   const [benchCopied, setBenchCopied] = useState(false);
   const [followUpInput, setFollowUpInput] = useState('');
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -86,6 +87,7 @@ export function DebatePage() {
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const resetDebate = useDebateStore((state) => state.resetDebate);
   const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
+  const branching = useDebateStore((state) => state.branching);
 
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
@@ -216,7 +218,7 @@ export function DebatePage() {
   }, [effectiveSelectedAgents]);
 
   // WebSocket
-  const { isReady, startDebateSession, startFollowUpSession, injectConstraint } = useWebSocket({ autoConnect: true });
+  const { isReady, startDebateSession, startFollowUpSession, startBranchingSession, injectConstraint } = useWebSocket({ autoConnect: true });
 
   // Constraint input state
   const [constraintInput, setConstraintInput] = useState('');
@@ -390,6 +392,16 @@ export function DebatePage() {
     startFollowUpSession(newQuery, modelTier, previousContext, effectiveSelectedAgents);
   };
 
+  const canRunScenarios = !isDebating && phase === 'complete' && isReady;
+  const isBranching = Object.values(branching.branchStatus).some((status) => status === 'running');
+
+  const handleRunScenarios = () => {
+    if (!canRunScenarios || isBranching) return;
+    const previousContext = getPreviousTurnsContext();
+    startBranchingSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam);
+    setIsScenariosOpen(true);
+  };
+
   const handleSelectSession = useCallback((sessionId: string) => {
     const session = loadSession(sessionId);
     if (session) {
@@ -453,8 +465,62 @@ export function DebatePage() {
             </p>
           </div>
 
-          {/* Right: Bench + History */}
+          {/* Right: Scenarios + Bench + History */}
           <div className="flex items-center gap-3">
+            <Dialog open={isScenariosOpen} onOpenChange={setIsScenariosOpen}>
+              <DialogTrigger asChild>
+                <button
+                  disabled={!canRunScenarios || isBranching}
+                  onClick={handleRunScenarios}
+                  className={`
+                    flex items-center gap-2 transition-colors
+                    ${canRunScenarios && !isBranching ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
+                  `}
+                  title={canRunScenarios ? 'Run Best/Base/Worst scenarios' : 'Scenarios available after the run completes'}
+                >
+                  <GitBranch className="w-4 h-4" />
+                  <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">
+                    {isBranching ? 'SCENARIOS…' : 'SCENARIOS'}
+                  </span>
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-5xl bg-[#0a0a0a] border border-white/10 text-white">
+                <DialogHeader>
+                  <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
+                    Scenario Forks
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['best', 'base', 'worst'] as const).map((branchId) => {
+                    const status = branching.branchStatus[branchId];
+                    const synth = branching.branchAgents[branchId]?.synthesizer?.text || '';
+                    return (
+                      <div key={branchId} className="bg-white/[0.03] border border-white/[0.08] p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">
+                            {branchId === 'best' ? 'Best Case' : branchId === 'base' ? 'Base Case' : 'Worst Case'}
+                          </p>
+                          <span className="text-[9px] font-mono text-white/40">
+                            {status === 'running' ? 'RUNNING' : status === 'complete' ? 'COMPLETE' : 'IDLE'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-white/70 font-mono whitespace-pre-wrap leading-relaxed">
+                          {synth || (status === 'running' ? 'Streaming...' : 'No synthesis yet.')}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 bg-white/[0.03] border border-white/[0.08] p-4">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">
+                    Meta Synthesis
+                  </p>
+                  <div className="text-sm text-white/80 font-mono whitespace-pre-wrap leading-relaxed">
+                    {branching.metaSynthesis || (isBranching ? 'Synthesizing across scenarios...' : 'Run scenarios to see a meta synthesis.')}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
             <Dialog open={isBenchOpen} onOpenChange={setIsBenchOpen}>
               <DialogTrigger asChild>
                 <button

@@ -123,6 +123,36 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:
                 pass
 
+    async def run_branch_stream(
+        query: str,
+        model: str,
+        previous_context: str = "",
+        selected_agents: list = None,
+        industry: str = "",
+        api_key: str | None = None,
+    ):
+        try:
+            print(f"[{datetime.now().isoformat()}] Branching stream start id={stream_id} model={model} industry={industry or 'generic'}")
+            async for token in orchestrator.stream_branching(
+                query,
+                model,
+                previous_context,
+                selected_agents,
+                industry,
+                api_key_override=api_key,
+            ):
+                await websocket.send_json(token)
+            print(f"[{datetime.now().isoformat()}] Branching complete")
+        except asyncio.CancelledError:
+            print(f"[{datetime.now().isoformat()}] Branching stream cancelled")
+        except Exception as e:
+            error_msg = f"Error during branching: {str(e)}"
+            print(f"[{datetime.now().isoformat()}] {error_msg}")
+            try:
+                await websocket.send_json(create_error(error_msg))
+            except Exception:
+                pass
+
     try:
         while True:
             # Receive message
@@ -173,6 +203,42 @@ async def websocket_endpoint(websocket: WebSocket):
                 stream_id = str(uuid.uuid4())
                 stream_task = asyncio.create_task(
                     run_stream(query, model, previous_context, selected_agents, industry, api_key)
+                )
+
+            elif message.get("type") == "start_branching":
+                query = message.get("query", "").strip()
+                model = message.get("model", "pro")
+                previous_context = message.get("previousContext", "")
+                selected_agents = message.get("selectedAgents", None)
+                industry = message.get("industry", "")
+                api_key = (message.get("apiKey") or "").strip() or None
+
+                if api_key and not is_valid_api_key(api_key):
+                    await websocket.send_json(
+                        create_error("Invalid API key format. Expected a Cerebras key like csk-...")
+                    )
+                    continue
+
+                if not api_key and not settings.CEREBRAS_API_KEY:
+                    await websocket.send_json(
+                        create_error("Server is missing CEREBRAS_API_KEY. Provide your own API key in settings.")
+                    )
+                    continue
+
+                if not query:
+                    await websocket.send_json(create_error("Query cannot be empty"))
+                    continue
+
+                print(f"[{datetime.now().isoformat()}] Starting branching - Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'} | Industry: {industry or 'generic'}")
+
+                if stream_task and not stream_task.done():
+                    print(f"[{datetime.now().isoformat()}] Cancelling prior stream id={stream_id}")
+                    stream_task.cancel()
+                    await asyncio.sleep(0)
+
+                stream_id = str(uuid.uuid4())
+                stream_task = asyncio.create_task(
+                    run_branch_stream(query, model, previous_context, selected_agents, industry, api_key)
                 )
 
             elif message.get("type") == "inject_constraint":

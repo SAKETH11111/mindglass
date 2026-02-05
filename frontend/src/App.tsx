@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Send, Clock, Settings } from 'lucide-react'
-import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry } from './types/agent'
+import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry, type AgentId } from './types/agent'
 import { DebatePage } from '@/pages/debate'
 import { HistorySidebar } from '@/components/HistorySidebar'
 import { AgentManagerWindow } from '@/components/AgentManagerWindow'
@@ -13,6 +13,10 @@ import { useSessionStore } from '@/hooks/useSessionStore'
 import { useDebateStore } from '@/hooks/useDebateStore'
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { ApiKeyModal } from '@/components/ApiKeyModal'
+import { ApiKeyPrompt } from '@/components/ApiKeyPrompt'
+import { useApiKeyStore } from '@/hooks/useApiKeyStore'
+import { BackendWakePage } from '@/pages/BackendWake'
+import { warmBackend } from '@/lib/backend'
 
 // DiceBear Notionists avatar URLs for each agent (including industry-specific)
 const AGENT_AVATARS: Record<string, string> = {
@@ -45,6 +49,13 @@ const AGENT_AVATARS: Record<string, string> = {
   consulting_delivery: 'https://api.dicebear.com/7.x/notionists/svg?seed=presentation&backgroundColor=transparent',
 }
 
+interface PendingSubmission {
+  query: string;
+  model: ModelTier;
+  agents: AgentId[];
+  industry: IndustryType;
+}
+
 function HomePage() {
   const [inputValue, setInputValue] = useState("")
   const [isFocused, setIsFocused] = useState(false)
@@ -53,8 +64,11 @@ function HomePage() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isAgentWindowOpen, setIsAgentWindowOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isApiPromptOpen, setIsApiPromptOpen] = useState(false)
+  const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null)
   const agentAvatarsRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
+  const apiKey = useApiKeyStore((state) => state.apiKey)
 
   // Session management
   const {
@@ -83,25 +97,44 @@ function HomePage() {
     loadAllSessions()
   }, [loadAllSessions])
 
+  useEffect(() => {
+    warmBackend()
+  }, [])
+
   // Debate store reset function
   const resetDebate = useDebateStore((state) => state.resetDebate)
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault()
-    if (!inputValue.trim()) return
-
-    // Reset previous debate state before starting new one
+  const startSubmission = useCallback((submission: PendingSubmission) => {
     resetDebate()
 
-    // Create a new session with the selected agents
-    createSession(inputValue.trim(), selectedAgents, selectedTier)
+    const session = createSession(submission.query, submission.agents, submission.model)
+    const agentsParam = `&agents=${submission.agents.join(',')}`
+    const industryParam = submission.industry !== 'any' ? `&industry=${submission.industry}` : ''
+    const sessionParam = session ? `&session=${session.id}` : ''
 
-    // Navigate to debate page with query and selected model tier
-    // Always include agents param to ensure correct selection
-    const agentsParam = `&agents=${selectedAgents.join(',')}`
-    const industryParam = selectedIndustry !== 'any' ? `&industry=${selectedIndustry}` : ''
-    navigate(`/debate?q=${encodeURIComponent(inputValue.trim())}&model=${selectedTier}${agentsParam}${industryParam}`)
-  }, [inputValue, navigate, selectedTier, selectedAgents, createSession, resetDebate, selectedIndustry])
+    navigate(`/loading?q=${encodeURIComponent(submission.query)}&model=${submission.model}${agentsParam}${industryParam}${sessionParam}`)
+  }, [createSession, navigate, resetDebate])
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = inputValue.trim()
+    if (!trimmed) return
+
+    const submission: PendingSubmission = {
+      query: trimmed,
+      model: selectedTier,
+      agents: selectedAgents,
+      industry: selectedIndustry,
+    }
+
+    if (!apiKey) {
+      setPendingSubmission(submission)
+      setIsApiPromptOpen(true)
+      return
+    }
+
+    startSubmission(submission)
+  }, [apiKey, inputValue, selectedAgents, selectedIndustry, selectedTier, startSubmission])
 
   const handleSelectSession = useCallback((sessionId: string) => {
     const session = loadSession(sessionId)
@@ -113,7 +146,7 @@ function HomePage() {
       // Always include agents param to ensure correct selection
       const agentsParam = `&agents=${session.selectedAgents.join(',')}`
       console.log('[App] Loading session:', sessionId, 'query:', query, 'agents:', session.selectedAgents);
-      navigate(`/debate?q=${encodeURIComponent(query)}&model=${session.modelTier}${agentsParam}&session=${sessionId}`)
+      navigate(`/loading?q=${encodeURIComponent(query)}&model=${session.modelTier}${agentsParam}&session=${sessionId}`)
     } else {
       console.error('[App] Failed to load session:', sessionId);
     }
@@ -127,6 +160,24 @@ function HomePage() {
     <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
       {/* Rainbow Matrix Shader Background */}
       <RainbowMatrixShader />
+
+      <ApiKeyPrompt
+        isOpen={isApiPromptOpen}
+        onContinue={() => {
+          setIsApiPromptOpen(false)
+          if (pendingSubmission) {
+            startSubmission(pendingSubmission)
+            setPendingSubmission(null)
+          }
+        }}
+        onSkip={() => {
+          setIsApiPromptOpen(false)
+          if (pendingSubmission) {
+            startSubmission(pendingSubmission)
+            setPendingSubmission(null)
+          }
+        }}
+      />
 
       {/* History Sidebar */}
       <HistorySidebar
@@ -370,6 +421,9 @@ function App() {
       <Routes>
         {/* Root - Home page */}
         <Route path="/" element={<HomePage />} />
+
+        {/* Backend warm-up */}
+        <Route path="/loading" element={<BackendWakePage />} />
 
         {/* Debate Canvas - Main experience */}
         <Route path="/debate" element={<DebatePage />} />

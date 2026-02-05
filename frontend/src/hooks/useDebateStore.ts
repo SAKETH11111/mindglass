@@ -12,6 +12,8 @@ import {
 import type { GraphNode, GraphEdge } from '@/types/graph';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+export type BranchId = 'best' | 'base' | 'worst' | 'meta';
+export type BranchStatus = 'idle' | 'running' | 'complete';
 
 interface AgentMetricsPayload {
   tokensPerSecond: number;
@@ -42,6 +44,12 @@ export interface BenchmarkReport {
       tokensPerSecond?: number;
     }
   >;
+}
+
+export interface BranchingState {
+  branchStatus: Record<'best' | 'base' | 'worst', BranchStatus>;
+  branchAgents: Record<'best' | 'base' | 'worst', Record<string, AgentState>>;
+  metaSynthesis: string | null;
 }
 
 // Checkpoint for timeline time-travel
@@ -99,6 +107,7 @@ interface DebateState {
   tokensPerSecond: number;
   totalTokens: number;
   benchmarkReport: BenchmarkReport | null;
+  branching: BranchingState;
 
   // Error state
   error: string | null;
@@ -136,6 +145,14 @@ interface DebateState {
   setAgentError: (agentId: string, error: string) => void;
   updateMetrics: (tokensPerSecond: number, totalTokens: number) => void;
   setBenchmarkReport: (report: BenchmarkReport | null) => void;
+  startBranching: (industry?: string) => void;
+  appendBranchToken: (branchId: BranchId, agentId: string, content: string) => void;
+  setBranchAgentMetrics: (branchId: BranchId, agentId: string, metrics: AgentMetricsPayload) => void;
+  setBranchAgentDone: (branchId: BranchId, agentId: string) => void;
+  setBranchAgentError: (branchId: BranchId, agentId: string, error: string) => void;
+  setBranchComplete: (branchId: Exclude<BranchId, 'meta'>) => void;
+  setMetaSynthesis: (text: string) => void;
+  resetBranching: () => void;
   endDebate: () => void;
   resetDebate: () => void;
   setError: (error: string | null) => void;
@@ -218,6 +235,19 @@ const initialState = {
   tokensPerSecond: 0,
   totalTokens: 0,
   benchmarkReport: null as BenchmarkReport | null,
+  branching: {
+    branchStatus: {
+      best: 'idle',
+      base: 'idle',
+      worst: 'idle',
+    },
+    branchAgents: {
+      best: {},
+      base: {},
+      worst: {},
+    },
+    metaSynthesis: null,
+  } as BranchingState,
   error: null,
   nodes: [] as GraphNode[],
   edges: [] as GraphEdge[],
@@ -253,6 +283,11 @@ export const useDebateStore = create<DebateState>()(
         tokensPerSecond: 0,
         totalTokens: 0,
         benchmarkReport: null,
+        branching: {
+          branchStatus: { best: 'idle', base: 'idle', worst: 'idle' },
+          branchAgents: { best: {}, base: {}, worst: {} },
+          metaSynthesis: null,
+        },
         error: null,
         nodes: [],
         edges: [],
@@ -423,6 +458,198 @@ export const useDebateStore = create<DebateState>()(
     updateMetrics: (tokensPerSecond, totalTokens) => set({ tokensPerSecond, totalTokens }),
 
     setBenchmarkReport: (benchmarkReport) => set({ benchmarkReport }),
+
+    startBranching: (industry) =>
+      set(() => ({
+        branching: {
+          branchStatus: { best: 'running', base: 'running', worst: 'running' },
+          branchAgents: {
+            best: createInitialAgents(industry),
+            base: createInitialAgents(industry),
+            worst: createInitialAgents(industry),
+          },
+          metaSynthesis: null,
+        },
+      })),
+
+    appendBranchToken: (branchId, agentId, content) =>
+      set((state) => {
+        if (branchId === 'meta') {
+          return {
+            branching: {
+              ...state.branching,
+              metaSynthesis: (state.branching.metaSynthesis || '') + content,
+            },
+          };
+        }
+
+        const branchAgents = state.branching.branchAgents[branchId];
+        let agent = branchAgents[agentId];
+        if (!agent) {
+          agent = {
+            id: agentId,
+            name: AGENT_NAMES[agentId] || agentId,
+            text: '',
+            color: AGENT_COLORS[agentId] || '#6B7280',
+            phase: null,
+            isActive: true,
+            isStreaming: true,
+            tokenCount: 0,
+            tokensPerSecond: 0,
+            streamStartTime: Date.now(),
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            completionTime: 0,
+          };
+        }
+
+        const now = Date.now();
+        const streamStartTime = agent.streamStartTime || now;
+        const newTokenCount = agent.tokenCount + 1;
+        const elapsedSeconds = (now - streamStartTime) / 1000;
+        const tokensPerSecond = elapsedSeconds > 0 ? Math.round(newTokenCount / elapsedSeconds) : 0;
+
+        return {
+          branching: {
+            ...state.branching,
+            branchAgents: {
+              ...state.branching.branchAgents,
+              [branchId]: {
+                ...branchAgents,
+                [agentId]: {
+                  ...agent,
+                  text: agent.text + content,
+                  isStreaming: true,
+                  tokenCount: newTokenCount,
+                  tokensPerSecond,
+                  streamStartTime,
+                },
+              },
+            },
+          },
+        };
+      }),
+
+    setBranchAgentMetrics: (branchId, agentId, metrics) =>
+      set((state) => {
+        if (branchId === 'meta') return state;
+        const branchAgents = state.branching.branchAgents[branchId];
+        const existingAgent = branchAgents[agentId];
+        const agent = existingAgent || {
+          id: agentId,
+          name: AGENT_NAMES[agentId] || agentId,
+          text: '',
+          color: AGENT_COLORS[agentId] || '#6B7280',
+          phase: null,
+          isActive: true,
+          isStreaming: false,
+          tokenCount: 0,
+          tokensPerSecond: 0,
+          streamStartTime: null,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          completionTime: 0,
+        };
+
+        return {
+          branching: {
+            ...state.branching,
+            branchAgents: {
+              ...state.branching.branchAgents,
+              [branchId]: {
+                ...branchAgents,
+                [agentId]: {
+                  ...agent,
+                  tokensPerSecond: metrics.tokensPerSecond,
+                  tokenCount: metrics.completionTokens,
+                  promptTokens: metrics.promptTokens,
+                  completionTokens: metrics.completionTokens,
+                  totalTokens: metrics.totalTokens,
+                  completionTime: metrics.completionTime,
+                },
+              },
+            },
+          },
+        };
+      }),
+
+    setBranchAgentDone: (branchId, agentId) =>
+      set((state) => {
+        if (branchId === 'meta') return state;
+        const branchAgents = state.branching.branchAgents[branchId];
+        const agent = branchAgents[agentId];
+        if (!agent) return state;
+        return {
+          branching: {
+            ...state.branching,
+            branchAgents: {
+              ...state.branching.branchAgents,
+              [branchId]: {
+                ...branchAgents,
+                [agentId]: {
+                  ...agent,
+                  isStreaming: false,
+                },
+              },
+            },
+          },
+        };
+      }),
+
+    setBranchAgentError: (branchId, agentId, error) =>
+      set((state) => {
+        if (branchId === 'meta') return state;
+        const branchAgents = state.branching.branchAgents[branchId];
+        const agent = branchAgents[agentId];
+        if (!agent) return state;
+        return {
+          branching: {
+            ...state.branching,
+            branchAgents: {
+              ...state.branching.branchAgents,
+              [branchId]: {
+                ...branchAgents,
+                [agentId]: {
+                  ...agent,
+                  isStreaming: false,
+                  isActive: false,
+                },
+              },
+            },
+          },
+          error: `${agentId}: ${error}`,
+        };
+      }),
+
+    setBranchComplete: (branchId) =>
+      set((state) => ({
+        branching: {
+          ...state.branching,
+          branchStatus: {
+            ...state.branching.branchStatus,
+            [branchId]: 'complete',
+          },
+        },
+      })),
+
+    setMetaSynthesis: (text) =>
+      set((state) => ({
+        branching: {
+          ...state.branching,
+          metaSynthesis: text,
+        },
+      })),
+
+    resetBranching: () =>
+      set({
+        branching: {
+          branchStatus: { best: 'idle', base: 'idle', worst: 'idle' },
+          branchAgents: { best: {}, base: {}, worst: {} },
+          metaSynthesis: null,
+        },
+      }),
 
     endDebate: () =>
       set((state) => {
@@ -621,6 +848,11 @@ export const useDebateStore = create<DebateState>()(
         tokensPerSecond: 0,
         totalTokens: 0,
         benchmarkReport: null,
+        branching: {
+          branchStatus: { best: 'idle', base: 'idle', worst: 'idle' },
+          branchAgents: { best: {}, base: {}, worst: {} },
+          metaSynthesis: null,
+        },
         error: null,
         constraints: [],
         userProxyNode: null,
@@ -638,6 +870,11 @@ export const useDebateStore = create<DebateState>()(
         currentTurnIndex: 0,
         nodes: [],
         edges: [],
+        branching: {
+          branchStatus: { best: 'idle', base: 'idle', worst: 'idle' },
+          branchAgents: { best: {}, base: {}, worst: {} },
+          metaSynthesis: null,
+        },
       }),
 
     setShowApiKeyModal: (show) => set({ showApiKeyModal: show }),

@@ -1,10 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useApiKeyStore } from '@/hooks/useApiKeyStore';
+import { WS_URL } from '@/lib/backend';
 import type { WebSocketMessage } from '@/types';
 import type { Phase, AgentId } from '@/types/agent';
-
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/debate';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
@@ -25,6 +24,13 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     endDebate,
     setError,
     setBenchmarkReport,
+    startBranching,
+    appendBranchToken,
+    setBranchAgentMetrics,
+    setBranchAgentDone,
+    setBranchAgentError,
+    setBranchComplete,
+    setMetaSynthesis,
     startDebate,
     addConstraint,
     addCheckpoint,
@@ -91,37 +97,64 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
 
           switch (data.type) {
             case 'agent_token': {
-              appendToken(data.agentId, data.content);
+              if (data.branchId) {
+                appendBranchToken(data.branchId, data.agentId, data.content);
+              } else {
+                appendToken(data.agentId, data.content);
+              }
               break;
             }
 
             case 'agent_metrics': {
-              setAgentMetrics(data.agentId, {
-                tokensPerSecond: data.tokensPerSecond,
-                totalTokens: data.totalTokens,
-                promptTokens: data.promptTokens,
-                completionTokens: data.completionTokens,
-                completionTime: data.completionTime,
-              });
+              if (data.branchId) {
+                setBranchAgentMetrics(data.branchId, data.agentId, {
+                  tokensPerSecond: data.tokensPerSecond,
+                  totalTokens: data.totalTokens,
+                  promptTokens: data.promptTokens,
+                  completionTokens: data.completionTokens,
+                  completionTime: data.completionTime,
+                });
+              } else {
+                setAgentMetrics(data.agentId, {
+                  tokensPerSecond: data.tokensPerSecond,
+                  totalTokens: data.totalTokens,
+                  promptTokens: data.promptTokens,
+                  completionTokens: data.completionTokens,
+                  completionTime: data.completionTime,
+                });
+              }
               break;
             }
 
             case 'agent_done': {
-              setAgentDone(data.agentId);
+              if (data.branchId) {
+                setBranchAgentDone(data.branchId, data.agentId);
+                if (data.branchId !== 'meta' && data.agentId === 'synthesizer') {
+                  setBranchComplete(data.branchId);
+                }
+              } else {
+                setAgentDone(data.agentId);
+              }
               // Create checkpoint when agent finishes
-              const agentName = data.agentId.charAt(0).toUpperCase() + data.agentId.slice(1);
-              addCheckpoint({
-                id: `agent-${data.agentId}-${Date.now()}`,
-                timestamp: getTimestamp(),
-                type: 'agent_done',
-                label: `${agentName} finished`,
-                agentId: data.agentId,
-              });
+              if (!data.branchId) {
+                const agentName = data.agentId.charAt(0).toUpperCase() + data.agentId.slice(1);
+                addCheckpoint({
+                  id: `agent-${data.agentId}-${Date.now()}`,
+                  timestamp: getTimestamp(),
+                  type: 'agent_done',
+                  label: `${agentName} finished`,
+                  agentId: data.agentId,
+                });
+              }
               break;
             }
 
             case 'agent_error': {
-              setAgentError(data.agentId, data.error);
+              if (data.branchId) {
+                setBranchAgentError(data.branchId, data.agentId, data.error);
+              } else {
+                setAgentError(data.agentId, data.error);
+              }
               // Also check for rate limit / quota errors in agent errors
               const agentErrorLower = data.error?.toLowerCase() || '';
               if (agentErrorLower.includes('rate limit') ||
@@ -135,22 +168,28 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
             }
 
             case 'phase_change': {
-              setPhase(data.phase, data.activeAgents);
+              if (!data.branchId) {
+                setPhase(data.phase, data.activeAgents);
+              }
               break;
             }
 
             case 'phase_start': {
               // New round-based streaming message - use round name directly
-              console.log(`Round ${data.phase} started: ${data.name}`);
-              // Use the round name directly as the phase (cast to Phase since names are valid phases)
-              setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
+              if (!data.branchId) {
+                console.log(`Round ${data.phase} started: ${data.name}`);
+                // Use the round name directly as the phase (cast to Phase since names are valid phases)
+                setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
+              }
               break;
             }
 
             case 'round_start': {
               // New round-based debate message
-              console.log(`Round ${data.round} started: ${data.name}`);
-              setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
+              if (!data.branchId) {
+                console.log(`Round ${data.round} started: ${data.name}`);
+                setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
+              }
               break;
             }
 
@@ -161,11 +200,21 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
             }
 
             case 'debate_complete': {
-              if (data.benchmark) {
-                setBenchmarkReport(data.benchmark);
+              if (data.branchId) {
+                if (data.branchId === 'meta') {
+                  const metaText = useDebateStore.getState().branching.metaSynthesis;
+                  if (metaText) {
+                    setMetaSynthesis(metaText);
+                  }
+                }
+                console.log(`Branch ${data.branchId} complete`);
+              } else {
+                if (data.benchmark) {
+                  setBenchmarkReport(data.benchmark);
+                }
+                endDebate();
+                console.log('Debate complete');
               }
-              endDebate();
-              console.log('Debate complete');
               break;
             }
 
@@ -299,11 +348,31 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     });
   }, [sendMessage, apiKey]);
 
+  const startBranchingSession = useCallback((
+    query: string,
+    model?: string,
+    previousContext?: string,
+    selectedAgents?: AgentId[],
+    industry?: string
+  ) => {
+    const resolvedApiKey = apiKey?.trim() || undefined;
+    startBranching(industry);
+    return sendMessage({
+      type: 'start_branching',
+      query,
+      model: model || 'pro',
+      previousContext: previousContext || '',
+      selectedAgents: selectedAgents || null,
+      industry: industry || '',
+      ...(resolvedApiKey ? { apiKey: resolvedApiKey } : {}),
+    });
+  }, [sendMessage, apiKey, startBranching]);
+
   // Inject a constraint mid-debate (PRD: Interrupt & Inject feature)
   const injectConstraint = useCallback((constraint: string): boolean => {
     console.log('Injecting constraint:', constraint);
     return sendMessage({ type: 'inject_constraint', constraint });
   }, [sendMessage]);
 
-  return { sendMessage, isReady, retry, startDebateSession, startFollowUpSession, injectConstraint };
+  return { sendMessage, isReady, retry, startDebateSession, startFollowUpSession, startBranchingSession, injectConstraint };
 }

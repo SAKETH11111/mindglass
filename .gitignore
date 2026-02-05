@@ -105,3 +105,7 @@ Thumbs.db
 *.pid.lock
 .vercel
 .env*.local
+
+# Allow frontend source libs
+!frontend/src/lib/
+!frontend/src/lib/**

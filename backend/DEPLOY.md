@@ -56,8 +56,9 @@ curl https://mindglass-backend.fly.dev/api/health
 ### 5. Update Frontend
 
 1. Go to [vercel.com](https://vercel.com) → your project → Settings → Environment Variables
-2. Add: `VITE_WS_URL=wss://mindglass-backend.fly.dev/ws/debate`
-3. Redeploy frontend
+2. Add: `VITE_WS_URL=wss://<your-backend-domain>/ws/debate`
+3. (Optional) Add: `VITE_API_URL=https://<your-backend-domain>` for health checks/wake-ups
+4. Redeploy frontend
 
 ### Fly.io Config Files (Already Created)
 
@@ -76,11 +77,11 @@ If Fly.io doesn't work for you:
 3. Connect GitHub repo
 4. Settings:
    - **Build:** `pip install -r requirements.txt`
-   - **Start:** `uvicorn main:app --host 0.0.0.0 --port $PORT --ws websockets`
-   - **Plan:** Standard ($7/month)
+   - **Start:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT --ws websockets`
+   - **Plan:** Standard ($7/month) for always-on WebSockets
 5. Env vars:
    - `CEREBRAS_API_KEY` = your key
-   - `FRONTEND_URL` = https://frontend-nine-iota-86.vercel.app
+   - `FRONTEND_URL` = https://prism-cerebras.vercel.app
 
 ---
 

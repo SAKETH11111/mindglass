@@ -7,7 +7,7 @@ services:
     runtime: python
     plan: standard  # Upgrade to standard for better WebSocket performance
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --ws websockets
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --ws websockets
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -16,7 +16,7 @@ services:
       - key: CEREBRAS_API_KEY
         sync: false  # Set this in Render dashboard
       - key: FRONTEND_URL
-        value: https://frontend-nine-iota-86.vercel.app  # Your Vercel frontend URL
+        value: https://prism-cerebras.vercel.app  # Your Vercel frontend URL
       - key: DEBUG
         value: false
     healthCheckPath: /api/health

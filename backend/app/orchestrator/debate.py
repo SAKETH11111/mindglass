@@ -158,6 +158,7 @@ class DebateOrchestrator:
         selected_agents: List[str] = None,
         industry: str = "",
         api_key_override: str | None = None,
+        branch_id: str | None = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a multi-round debate where agents respond to each other.
@@ -240,21 +241,27 @@ class DebateOrchestrator:
             if self._interrupt_event.is_set():
                 self._interrupt_event.clear()
             # Signal round start to frontend
-            yield {
+            round_start_msg = {
                 "type": "round_start",
                 "round": round_config.round_num,
                 "name": round_config.name,
                 "agents": round_config.agents,
                 "timestamp": int(datetime.now().timestamp() * 1000)
             }
+            if branch_id:
+                round_start_msg["branchId"] = branch_id
+            yield round_start_msg
             
             # Also emit phase_start for compatibility with existing frontend
-            yield {
+            phase_start_msg = {
                 "type": "phase_start", 
                 "phase": round_config.round_num, 
                 "name": round_config.name,
                 "timestamp": int(datetime.now().timestamp() * 1000)
             }
+            if branch_id:
+                phase_start_msg["branchId"] = branch_id
+            yield phase_start_msg
             
             print(f"[{datetime.now().isoformat()}] Round {round_config.round_num}: {round_config.name} - Agents: {round_config.agents}")
             
@@ -281,6 +288,8 @@ class DebateOrchestrator:
                     use_reasoning,
                     fallback_model_id="llama3.1-8b",
                 ):
+                    if branch_id:
+                        msg["branchId"] = branch_id
                     yield msg
             except RoundRestartRequested:
                 # Clear any partial outputs for this round and retry
@@ -298,7 +307,7 @@ class DebateOrchestrator:
         print(f"[{datetime.now().isoformat()}] Debate complete - {self.token_count} tokens in {elapsed:.1f}s ({tps:.0f} t/s)")
         
         self._current_round_num = None
-        yield {
+        debate_complete_msg = {
             "type": "debate_complete",
             "totalTokens": self.token_count,
             "totalTime": round(elapsed, 2),
@@ -310,6 +319,128 @@ class DebateOrchestrator:
                 "agents": self._bench_agents,
             },
             "timestamp": int(datetime.now().timestamp() * 1000)
+        }
+        if branch_id:
+            debate_complete_msg["branchId"] = branch_id
+        yield debate_complete_msg
+
+    async def stream_branching(
+        self,
+        query: str,
+        model: str = "pro",
+        previous_context: str = "",
+        selected_agents: List[str] = None,
+        industry: str = "",
+        api_key_override: str | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Stream three parallel branches (best/base/worst) and a final meta-synthesis.
+        Each branch runs a full debate in parallel, then we synthesize across branches.
+        """
+        branch_prompts = {
+            "best": (
+                "Assume ideal conditions: favorable market response, strong execution, and minimal constraints. "
+                "Identify maximum upside, best-case KPIs, and bold recommendations."
+            ),
+            "base": (
+                "Assume realistic conditions: moderate adoption, average execution, and typical constraints. "
+                "Provide balanced recommendations."
+            ),
+            "worst": (
+                "Assume adverse conditions: slow adoption, execution risk, constrained resources. "
+                "Focus on downside risks and mitigation."
+            ),
+        }
+
+        queue: asyncio.Queue = asyncio.Queue()
+        branch_summaries: Dict[str, str] = {}
+
+        async def run_branch(branch_id: str, prefix: str) -> None:
+            branch_orch = DebateOrchestrator()
+            branched_query = f"{prefix}\n\nDecision context: {query}"
+            async for msg in branch_orch.stream_debate(
+                branched_query,
+                model=model,
+                previous_context=previous_context,
+                selected_agents=selected_agents,
+                industry=industry,
+                api_key_override=api_key_override,
+                branch_id=branch_id,
+            ):
+                await queue.put(msg)
+            # Capture synthesizer summary from final round
+            summary = (
+                branch_orch.blackboard.get(5, {}).get("synthesizer")
+                or branch_orch.blackboard.get(max(branch_orch.blackboard.keys(), default=5), {}).get("synthesizer", "")
+            )
+            branch_summaries[branch_id] = summary or ""
+            await queue.put({"type": "_branch_complete", "branchId": branch_id})
+
+        tasks = [
+            asyncio.create_task(run_branch(branch_id, prefix))
+            for branch_id, prefix in branch_prompts.items()
+        ]
+
+        completed = 0
+        total = len(tasks)
+        while completed < total:
+            msg = await queue.get()
+            if msg.get("type") == "_branch_complete":
+                completed += 1
+                continue
+            yield msg
+
+        # Ensure all branch tasks are done
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Meta-synthesis after all branches complete
+        meta_registry = get_industry_agent_registry(industry) if industry else AGENT_REGISTRY
+        if "synthesizer" not in meta_registry:
+            return
+        meta_agent = meta_registry["synthesizer"](api_key=api_key_override)
+
+        meta_prompt = (
+            "You are the META-SYNTHESIZER. Combine the three scenario syntheses into one robust decision.\n\n"
+            f"Original decision: {query}\n\n"
+            "Best-case synthesis:\n"
+            f"{branch_summaries.get('best', '').strip()}\n\n"
+            "Base-case synthesis:\n"
+            f"{branch_summaries.get('base', '').strip()}\n\n"
+            "Worst-case synthesis:\n"
+            f"{branch_summaries.get('worst', '').strip()}\n\n"
+            "Produce:\n"
+            "1) Robust insights that hold across all three scenarios\n"
+            "2) Key divergences (best vs worst)\n"
+            "3) A risk-balanced recommendation\n"
+        )
+
+        # Emit meta round start signals
+        meta_round_msg = {
+            "type": "round_start",
+            "round": 0,
+            "name": "Meta Synthesis",
+            "agents": ["synthesizer"],
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "branchId": "meta",
+        }
+        yield meta_round_msg
+        yield {
+            "type": "phase_start",
+            "phase": 0,
+            "name": "Meta Synthesis",
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "branchId": "meta",
+        }
+
+        async for msg in meta_agent.stream_response(meta_prompt, model_override=None, use_reasoning=False):
+            msg["branchId"] = "meta"
+            yield msg
+
+        yield {
+            "type": "debate_complete",
+            "branchId": "meta",
+            "timestamp": int(datetime.now().timestamp() * 1000),
         }
 
     def _build_debate_rounds(self) -> List[DebateRound]:
