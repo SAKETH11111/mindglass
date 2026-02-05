@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DotMatrixText } from '@/components/DotMatrixText';
-import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader';
 import { API_BASE_URL, waitForBackend, warmBackend } from '@/lib/backend';
+import nebulaVideo from '@/assets/shattered_nebula_orb_remix.webm';
 
 export function BackendWakePage() {
   const [searchParams] = useSearchParams();
@@ -77,8 +77,18 @@ export function BackendWakePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
-      <RainbowMatrixShader />
+    <div className="min-h-screen bg-black text-white relative overflow-hidden">
+      <video
+        className="absolute inset-0 h-full w-full object-cover object-center"
+        autoPlay
+        loop
+        muted
+        playsInline
+      >
+        <source src={nebulaVideo} type="video/webm" />
+      </video>
+      <div className="absolute inset-0 bg-black/55" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70" />
 
       <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-24">
         <div className="w-full max-w-xl space-y-8 text-center">
@@ -100,13 +110,13 @@ export function BackendWakePage() {
             </p>
           </div>
 
-          <div className="border border-white/15 bg-[rgba(38,38,38,0.8)] backdrop-blur-[12px] px-6 py-6 space-y-4">
-            <p className="text-sm text-white/80">{status}</p>
-            <div className="flex items-center justify-center gap-2 text-[11px] text-white/40 font-mono uppercase tracking-widest">
+          <div className="border border-white/20 bg-[rgba(15,15,15,0.75)] backdrop-blur-[10px] px-6 py-6 space-y-4 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <p className="text-sm text-white/85">{status}</p>
+            <div className="flex items-center justify-center gap-3 text-[11px] text-white/50 font-mono uppercase tracking-[0.3em]">
               <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-[#F15A29]" />
               <span>Attempt {attempt || 1}</span>
             </div>
-            <p className="text-[11px] text-white/40 font-mono">
+            <p className="text-[11px] text-white/45 font-mono">
               Pinging {API_BASE_URL}/api/health
             </p>
           </div>
