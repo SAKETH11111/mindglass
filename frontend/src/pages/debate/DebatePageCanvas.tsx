@@ -27,6 +27,7 @@ import { useSessionStore } from '@/hooks/useSessionStore';
 import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import type { ConsultationSession } from '@/types/session';
+import canvasBg from '@/assets/canvas_orb.png';
 
 // DiceBear avatar
 const getAvatarUrl = (agentId: string) => {
@@ -682,6 +683,14 @@ export function DebatePage() {
             CENTER - React Flow Canvas
         ───────────────────────────────────────────────────────────── */}
         <main className="flex-1 min-w-0 relative">
+          <div className="absolute inset-0 pointer-events-none">
+            <div
+              className="absolute inset-0 bg-center bg-cover"
+              style={{ backgroundImage: `url(${canvasBg})` }}
+            />
+            <div className="absolute inset-0 bg-[#0a0a0a]/70" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70" />
+          </div>
           <DebateCanvas onNodeSelect={handleNodeSelect} designMode="boxy" />
 
           {/* Overlay: Waiting state */}
