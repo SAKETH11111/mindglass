@@ -2,6 +2,7 @@
 
 # Python (Backend)
 __pycache__/
+backend/app/__pycache__/
 *.py[cod]
 *$py.class
 *.so
