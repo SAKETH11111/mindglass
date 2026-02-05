@@ -26,6 +26,7 @@ class Settings:
         FRONTEND_URL,
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://prism-cerebras.vercel.app",
         "https://frontend-nine-iota-86.vercel.app",  # Vercel deployment
         "https://*.vercel.app",  # Allow all Vercel preview deployments
     ]

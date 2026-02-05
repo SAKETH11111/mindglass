@@ -10,22 +10,11 @@ export interface StartDebateMessage {
   apiKey?: string;
 }
 
-export interface StartBranchingMessage {
-  type: 'start_branching';
-  query: string;
-  model?: string;
-  previousContext?: string;
-  selectedAgents?: AgentId[] | null;
-  industry?: string;
-  apiKey?: string;
-}
-
 export interface AgentTokenMessage {
   type: 'agent_token';
   agentId: AgentId;
   content: string;
   timestamp: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface AgentMetricsMessage {
@@ -37,14 +26,12 @@ export interface AgentMetricsMessage {
   completionTokens: number;
   completionTime: number;
   timestamp: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface AgentDoneMessage {
   type: 'agent_done';
   agentId: AgentId;
   timestamp: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface AgentErrorMessage {
@@ -52,7 +39,6 @@ export interface AgentErrorMessage {
   agentId: AgentId;
   error: string;
   timestamp: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface PhaseChangeMessage {
@@ -60,7 +46,6 @@ export interface PhaseChangeMessage {
   phase: Phase;
   activeAgents: AgentId[];
   timestamp: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface MetricsMessage {
@@ -68,7 +53,6 @@ export interface MetricsMessage {
   tokensPerSecond: number;
   totalTokens: number;
   timestamp: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface DebateCompleteMessage {
@@ -77,7 +61,6 @@ export interface DebateCompleteMessage {
   totalTokens?: number;
   totalTime?: number;
   avgTokensPerSecond?: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
   benchmark?: {
     e2eMs: number;
     firstTokenMs: number | null;
@@ -108,7 +91,6 @@ export interface PhaseStartMessage {
   name: string;
   agents?: string[];
   timestamp?: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface RoundStartMessage {
@@ -117,7 +99,6 @@ export interface RoundStartMessage {
   name: string;
   agents?: string[];
   timestamp?: number;
-  branchId?: 'best' | 'base' | 'worst' | 'meta';
 }
 
 export interface ErrorMessage {
