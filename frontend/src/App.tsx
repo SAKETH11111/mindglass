@@ -208,7 +208,7 @@ function HomePage() {
                 <Settings className="w-4 h-4" />
               </button>
               <a
-                href="https://github.com"
+                href="https://github.com/SAKETH11111/mindglass"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center w-7 h-7 text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-all duration-200"
