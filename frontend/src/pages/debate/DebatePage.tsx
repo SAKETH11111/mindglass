@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { Send, MessageSquarePlus } from 'lucide-react';
+import { Send, MessageSquarePlus, BarChart3, Clock, GitBranch } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, type BaseAgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSessionStore } from '@/hooks/useSessionStore';
 import { DotMatrixText } from '@/components/DotMatrixText';
+import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import type { ConsultationSession } from '@/types/session';
 
 // DiceBear Notionists avatar URL generator
@@ -177,6 +179,13 @@ export function DebatePage() {
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
   const hasAutoOpenedSynth = useRef(false);
 
+  // Top bar dialogs
+  const [isBenchOpen, setIsBenchOpen] = useState(false);
+  const [benchCopied, setBenchCopied] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isScenariosOpen, setIsScenariosOpen] = useState(false);
+  const [pendingScenarioStart, setPendingScenarioStart] = useState(false);
+
   // Collapsible section state - for auto-open/close behavior
   const [isPerspectivesOpen, setIsPerspectivesOpen] = useState(true);
   const [openAgents, setOpenAgents] = useState<Set<AgentId>>(new Set());
@@ -203,15 +212,35 @@ export function DebatePage() {
 
   // Store state
   const agents = useDebateStore((state) => state.agents);
+  const debateQuery = useDebateStore((state) => state.query);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const connectionState = useDebateStore((state) => state.connectionState);
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const resetDebate = useDebateStore((state) => state.resetDebate);
+  const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
+  const branchStatus = useDebateStore((state) => state.branchStatus);
+  const branchAgents = useDebateStore((state) => state.branchAgents);
+  const branchSyntheses = useDebateStore((state) => state.branchSyntheses);
+  const metaSynthesis = useDebateStore((state) => state.metaSynthesis);
+  const metaStatus = useDebateStore((state) => state.metaStatus);
 
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
-  
+
+  const derivedBench = useMemo(() => {
+    if (!benchmarkReport) return null;
+    const agentBench = Object.values(benchmarkReport.agents || {});
+    let completionTokens = 0;
+    let completionTime = 0;
+    for (const a of agentBench) {
+      if (typeof a.completionTokens === 'number') completionTokens += a.completionTokens;
+      if (typeof a.completionTimeSec === 'number') completionTime += a.completionTimeSec;
+    }
+    const weightedTps = completionTime > 0 ? completionTokens / completionTime : null;
+    return { completionTokens, completionTime, weightedTps };
+  }, [benchmarkReport]);
+
   // Follow-up conversation actions
   const saveCurrentTurn = useDebateStore((state) => state.saveCurrentTurn);
   const addFollowUpQuestion = useDebateStore((state) => state.addFollowUpQuestion);
@@ -222,7 +251,15 @@ export function DebatePage() {
   const [isInjecting, setIsInjecting] = useState(false);
 
   // WebSocket connection
-  const { isReady, startDebateSession, injectConstraint } = useWebSocket({ autoConnect: true });
+  const { isReady, startDebateSession, startScenarioSession, injectConstraint } = useWebSocket({ autoConnect: true });
+
+  const scenariosEnabled = phase === 'complete' && isReady;
+  const scenariosStarted = Object.values(branchStatus).some((status) => status !== 'idle')
+    || metaStatus !== 'idle'
+    || Boolean(metaSynthesis);
+  const scenariosRunning = Object.values(branchStatus).some((status) => status === 'running')
+    || metaStatus === 'running';
+  const scenarioQuery = debateQuery || query;
 
   // User constraint state from store
   const constraints = useDebateStore((state) => state.constraints);
@@ -459,6 +496,65 @@ export function DebatePage() {
     hasStartedRef.current = true;
   };
 
+  const handleScenariosOpen = useCallback(() => {
+    setIsScenariosOpen(true);
+    if (!scenariosEnabled || scenariosStarted) {
+      if (!isReady) setPendingScenarioStart(true);
+      return;
+    }
+    const previousContext = getPreviousTurnsContext();
+    startScenarioSession(scenarioQuery, modelTier, previousContext, selectedAgentsFromUrl);
+  }, [
+    scenariosEnabled,
+    scenariosStarted,
+    getPreviousTurnsContext,
+    scenarioQuery,
+    modelTier,
+    selectedAgentsFromUrl,
+    startScenarioSession,
+    isReady,
+  ]);
+
+  useEffect(() => {
+    if (!pendingScenarioStart) return;
+    if (!isReady || !scenariosEnabled || scenariosStarted) return;
+    const previousContext = getPreviousTurnsContext();
+    startScenarioSession(scenarioQuery, modelTier, previousContext, selectedAgentsFromUrl);
+    setPendingScenarioStart(false);
+  }, [
+    pendingScenarioStart,
+    isReady,
+    scenariosEnabled,
+    scenariosStarted,
+    getPreviousTurnsContext,
+    scenarioQuery,
+    modelTier,
+    selectedAgentsFromUrl,
+    startScenarioSession,
+  ]);
+
+  const handleSelectSession = useCallback((sessionId: string) => {
+    const session = loadSession(sessionId);
+    if (session) {
+      const lastQuery = session.turns.length > 0
+        ? session.turns[session.turns.length - 1].query
+        : session.title;
+      const agentsParamOut = `&agents=${session.selectedAgents.join(',')}`;
+      navigate(`/debate?q=${encodeURIComponent(lastQuery)}&model=${session.modelTier}${agentsParamOut}&session=${sessionId}`);
+    }
+  }, [loadSession, navigate]);
+
+  const handleNewSession = useCallback(() => {
+    resetDebate();
+    navigate('/');
+  }, [navigate, resetDebate]);
+
+  const scenarioCards = [
+    { id: 'best', title: 'Best Case', hint: 'Ideal conditions' },
+    { id: 'base', title: 'Base Case', hint: 'Realistic conditions' },
+    { id: 'worst', title: 'Worst Case', hint: 'Adverse conditions' },
+  ] as const;
+
   // Handle constraint injection (PRD: Interrupt & Inject)
   const handleInjectConstraint = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -528,6 +624,13 @@ export function DebatePage() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#0a0a0a] text-white flex flex-col">
+      <SessionHistoryPanel
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectSession={handleSelectSession}
+        onNewSession={handleNewSession}
+        designMode={designMode}
+      />
 
       {/* ═══════════════════════════════════════════════════════════════
           TOP BAR - Logo, Status, Token Counter
@@ -576,29 +679,272 @@ export function DebatePage() {
               </button>
             </div>
           </div>
-          {/* Right: Cerebras Branding + Connection Status */}
+          {/* Right: Actions + Cerebras Branding + Connection Status */}
           <div className="flex items-center gap-4">
-            {/* Cerebras Logo */}
-            <img
-              src="/cerebras-logo-white.png"
-              alt="Cerebras"
-              className="h-6 w-auto opacity-60"
-            />
+            <div className="flex items-center gap-3">
+              <Dialog open={isBenchOpen} onOpenChange={setIsBenchOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    disabled={!benchmarkReport}
+                    className={`
+                      flex items-center gap-2 transition-colors
+                      ${benchmarkReport ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
+                    `}
+                    title={benchmarkReport ? 'View benchmark report' : 'Benchmark available after the run completes'}
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">BENCH</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-3xl bg-[#0a0a0a] border border-white/10 text-white">
+                  <DialogHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
+                        Benchmark Report
+                      </DialogTitle>
+                      <button
+                        type="button"
+                        disabled={!benchmarkReport}
+                        onClick={async () => {
+                          if (!benchmarkReport) return;
+                          try {
+                            await navigator.clipboard.writeText(JSON.stringify(benchmarkReport, null, 2));
+                            setBenchCopied(true);
+                            window.setTimeout(() => setBenchCopied(false), 1200);
+                          } catch {
+                            // Best-effort; clipboard might be blocked in some contexts.
+                          }
+                        }}
+                        className={`
+                          px-2 py-1 border text-[10px] font-mono uppercase tracking-wider transition-colors
+                          ${benchmarkReport ? 'border-white/15 text-white/60 hover:text-white hover:border-white/30' : 'border-white/10 text-white/20 cursor-not-allowed'}
+                        `}
+                        title={benchmarkReport ? 'Copy benchmark JSON' : 'Benchmark available after the run completes'}
+                      >
+                        {benchCopied ? 'COPIED' : 'COPY JSON'}
+                      </button>
+                    </div>
+                  </DialogHeader>
+                  <DialogDescription className="sr-only">
+                    Performance metrics for the completed debate run.
+                  </DialogDescription>
 
-            {/* Connection Status */}
-            <div className="flex items-center gap-2">
-              <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} ${
-                connectionState === 'connected' ? 'bg-emerald-500' :
-                connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-                connectionState === 'error' ? 'bg-red-500' :
-                'bg-white/30'
-              }`} />
-              <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
-                {connectionState === 'connected' ? (designMode === 'boxy' ? 'LIVE' : 'Live') :
-                 connectionState === 'connecting' ? (designMode === 'boxy' ? 'CONNECTING' : 'Connecting') :
-                 connectionState === 'error' ? (designMode === 'boxy' ? 'ERROR' : 'Error') :
-                 (designMode === 'boxy' ? 'OFFLINE' : 'Offline')}
-              </span>
+                  {benchmarkReport ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-white/[0.03] border border-white/[0.06] p-3">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">E2E</p>
+                          <p className="text-xl font-mono text-white/90">
+                            {(benchmarkReport.e2eMs / 1000).toFixed(2)}s
+                          </p>
+                        </div>
+                        <div className="bg-white/[0.03] border border-white/[0.06] p-3">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">TTFT (first token)</p>
+                          <p className="text-xl font-mono text-white/90">
+                            {benchmarkReport.firstTokenMs !== null ? `${benchmarkReport.firstTokenMs}ms` : '--'}
+                          </p>
+                        </div>
+                        <div className="bg-white/[0.03] border border-white/[0.06] p-3">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">Weighted TPS</p>
+                          <p className="text-xl font-mono text-[#F15A29]">
+                            {derivedBench?.weightedTps ? Math.round(derivedBench.weightedTps).toLocaleString() : '--'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white/[0.02] border border-white/[0.06] p-3">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Rounds</p>
+                          <div className="space-y-1">
+                            {Object.entries(benchmarkReport.rounds || {})
+                              .sort(([a], [b]) => Number(a) - Number(b))
+                              .map(([roundNum, round]) => (
+                                <div key={roundNum} className="flex items-center justify-between text-xs font-mono">
+                                  <span className="text-white/70">
+                                    {roundNum}. {round.name}
+                                  </span>
+                                  <span className="text-white/50">{round.durationMs}ms</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                        <div className="bg-white/[0.02] border border-white/[0.06] p-3">
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Totals</p>
+                          <div className="space-y-1 text-xs font-mono text-white/70">
+                            <div className="flex items-center justify-between">
+                              <span>Completion tokens</span>
+                              <span className="text-white/50">
+                                {derivedBench?.completionTokens ? derivedBench.completionTokens.toLocaleString() : '--'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Completion time</span>
+                              <span className="text-white/50">
+                                {derivedBench?.completionTime ? `${derivedBench.completionTime.toFixed(2)}s` : '--'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/[0.02] border border-white/[0.06] p-3">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Agents</p>
+                        <div className="grid grid-cols-7 gap-2 text-[10px] font-mono uppercase tracking-wider text-white/40">
+                          <span>Agent</span>
+                          <span>Rnd</span>
+                          <span>Model</span>
+                          <span>TTFT</span>
+                          <span>ITL</span>
+                          <span>Tok</span>
+                          <span>TPS</span>
+                        </div>
+                        <div className="mt-2 space-y-1">
+                          {Object.entries(benchmarkReport.agents || {})
+                            .sort((a, b) => {
+                              const ar = a[1].round ?? 99;
+                              const br = b[1].round ?? 99;
+                              if (ar !== br) return ar - br;
+                              return a[0].localeCompare(b[0]);
+                            })
+                            .map(([agentId, a]) => (
+                              <div key={agentId} className="grid grid-cols-7 gap-2 text-xs font-mono text-white/70">
+                                <span className="text-white/90">{agentId}</span>
+                                <span className="text-white/50">{a.round}</span>
+                                <span className="text-white/50 truncate" title={a.model}>{a.model}</span>
+                                <span className="text-white/50">{a.ttftMs !== null ? `${a.ttftMs}ms` : '--'}</span>
+                                <span className="text-white/50">{a.avgItlMs !== null ? `${a.avgItlMs}ms` : '--'}</span>
+                                <span className="text-white/50">{typeof a.completionTokens === 'number' ? a.completionTokens.toLocaleString() : '--'}</span>
+                                <span className="text-[#F15A29]">{typeof a.tokensPerSecond === 'number' ? Math.round(a.tokensPerSecond).toLocaleString() : '--'}</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-white/50 font-mono">No benchmark report available.</p>
+                  )}
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={isScenariosOpen} onOpenChange={setIsScenariosOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    disabled={!scenariosEnabled}
+                    onClick={handleScenariosOpen}
+                    className={`
+                      flex items-center gap-2 transition-colors
+                      ${scenariosEnabled ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
+                    `}
+                    title={scenariosEnabled ? 'Run scenario branches' : isReady ? 'Scenarios unlock after the main debate completes' : 'Waiting for WebSocket connection'}
+                  >
+                    <GitBranch className="w-4 h-4" />
+                    <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">SCENARIOS</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-5xl bg-[#0a0a0a] border border-white/10 text-white">
+                <DialogHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
+                      Scenario Branches
+                    </DialogTitle>
+                    {scenariosRunning && (
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">
+                        Running...
+                      </span>
+                    )}
+                  </div>
+                </DialogHeader>
+                <DialogDescription className="sr-only">
+                  Parallel scenario branches with a meta-synthesis summary.
+                </DialogDescription>
+                {!isReady && (
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-white/30">
+                    Waiting for WebSocket connection…
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {scenarioCards.map((scenario) => {
+                      const status = branchStatus[scenario.id];
+                      const summary = branchAgents[scenario.id]?.synthesizer?.text || branchSyntheses[scenario.id];
+                      const placeholder = status === 'running'
+                        ? 'Streaming response...'
+                        : status === 'complete'
+                          ? 'Summary complete.'
+                          : 'Not run yet.';
+                      return (
+                        <div
+                          key={scenario.id}
+                          className="bg-white/[0.03] border border-white/[0.06] p-3 min-h-[220px] flex flex-col"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="text-xs font-mono uppercase tracking-wider text-white/80">{scenario.title}</p>
+                              <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider">{scenario.hint}</p>
+                            </div>
+                            <span
+                              className={`text-[10px] font-mono uppercase tracking-wider ${
+                                status === 'complete' ? 'text-emerald-400' :
+                                status === 'running' ? 'text-[#F15A29]' :
+                                'text-white/30'
+                              }`}
+                            >
+                              {status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-white/70 whitespace-pre-wrap font-mono flex-1">
+                            {summary || placeholder}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 bg-white/[0.02] border border-white/[0.08] p-4">
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">
+                      Meta-Synthesis
+                    </p>
+                    <div className="text-sm text-white/80 whitespace-pre-wrap font-mono">
+                      {metaSynthesis || (metaStatus === 'running'
+                        ? 'Synthesizing across scenarios...'
+                        : 'Waiting for scenarios to complete.')}
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <button
+                onClick={() => setIsHistoryOpen(true)}
+                className="flex items-center gap-2 text-white/50 hover:text-white transition-colors"
+              >
+                <Clock className="w-4 h-4" />
+                <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">HISTORY</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4">
+              {/* Cerebras Logo */}
+              <img
+                src="/cerebras-logo-white.png"
+                alt="Cerebras"
+                className="h-6 w-auto opacity-60"
+              />
+
+              {/* Connection Status */}
+              <div className="flex items-center gap-2">
+                <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} ${
+                  connectionState === 'connected' ? 'bg-emerald-500' :
+                  connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                  connectionState === 'error' ? 'bg-red-500' :
+                  'bg-white/30'
+                }`} />
+                <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
+                  {connectionState === 'connected' ? (designMode === 'boxy' ? 'LIVE' : 'Live') :
+                   connectionState === 'connecting' ? (designMode === 'boxy' ? 'CONNECTING' : 'Connecting') :
+                   connectionState === 'error' ? (designMode === 'boxy' ? 'ERROR' : 'Error') :
+                   (designMode === 'boxy' ? 'OFFLINE' : 'Offline')}
+                </span>
+              </div>
             </div>
           </div>
         </div>

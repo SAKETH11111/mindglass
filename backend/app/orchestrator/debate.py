@@ -68,6 +68,21 @@ DEBATE_ROUNDS = [
     ),
 ]
 
+SCENARIO_PREFIXES: Dict[str, str] = {
+    "best": (
+        "Best Case: Assume ideal conditions: favorable market response, strong execution, "
+        "and minimal constraints. Identify maximum upside, best-case KPIs, and bold recommendations."
+    ),
+    "base": (
+        "Base Case: Assume realistic conditions: moderate adoption, average execution, "
+        "and typical constraints. Provide balanced recommendations."
+    ),
+    "worst": (
+        "Worst Case: Assume adverse conditions: slow adoption, execution risk, "
+        "constrained resources. Focus on downside risks and mitigation."
+    ),
+}
+
 
 class RoundRestartRequested(Exception):
     """Raised when a constraint is injected mid-round and we need to restart the round."""
@@ -314,6 +329,105 @@ class DebateOrchestrator:
             "timestamp": int(datetime.now().timestamp() * 1000)
         }
         yield debate_complete_msg
+
+    async def stream_branching_debate(
+        self,
+        query: str,
+        model: str = "pro",
+        previous_context: str = "",
+        selected_agents: List[str] = None,
+        industry: str = "",
+        api_key_override: str | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Stream three parallel scenario debates (Best/Base/Worst), then a Meta-Synthesis pass.
+        Each branch reuses the standard debate flow but receives a scenario-specific prefix.
+        """
+        scenario_results: Dict[str, str] = {}
+        queue: asyncio.Queue = asyncio.Queue()
+        running_tasks: list[asyncio.Task] = []
+
+        async def stream_branch(branch_id: str, scenario_prefix: str):
+            """Run a single scenario branch and push messages into the shared queue."""
+            branch_orchestrator = DebateOrchestrator()
+            synth_buffer: List[str] = []
+            full_query = f"{scenario_prefix}\n\n{query}"
+            try:
+                async for msg in branch_orchestrator.stream_debate(
+                    full_query,
+                    model,
+                    previous_context,
+                    selected_agents,
+                    industry,
+                    api_key_override=api_key_override,
+                ):
+                    msg = dict(msg)
+                    msg["branchId"] = branch_id
+                    if msg.get("type") == "agent_token" and msg.get("agentId") == "synthesizer":
+                        content = msg.get("content")
+                        if isinstance(content, str):
+                            synth_buffer.append(content)
+                    await queue.put(msg)
+            except Exception as exc:
+                await queue.put({
+                    "type": "error",
+                    "message": f"Scenario branch '{branch_id}' failed: {exc}",
+                    "branchId": branch_id,
+                    "timestamp": int(datetime.now().timestamp() * 1000),
+                })
+            finally:
+                scenario_results[branch_id] = "".join(synth_buffer).strip()
+                await queue.put({
+                    "type": "__branch_done__",
+                    "branchId": branch_id,
+                })
+
+        for branch_id, prefix in SCENARIO_PREFIXES.items():
+            running_tasks.append(asyncio.create_task(stream_branch(branch_id, prefix)))
+
+        completed_branches: set[str] = set()
+        while len(completed_branches) < len(SCENARIO_PREFIXES):
+            msg = await queue.get()
+            if msg.get("type") == "__branch_done__":
+                completed_branches.add(msg.get("branchId"))
+                continue
+            yield msg
+
+        if running_tasks:
+            await asyncio.gather(*running_tasks, return_exceptions=True)
+
+        meta_prompt = "\n".join([
+            "You are the Meta-Synthesizer. You have three scenario summaries.",
+            "",
+            "BEST CASE SUMMARY:",
+            scenario_results.get("best") or "(no summary received)",
+            "",
+            "BASE CASE SUMMARY:",
+            scenario_results.get("base") or "(no summary received)",
+            "",
+            "WORST CASE SUMMARY:",
+            scenario_results.get("worst") or "(no summary received)",
+            "",
+            "Task:",
+            "1. Summarize robust insights that hold across all three scenarios.",
+            "2. List key divergences (where Best and Worst materially disagree).",
+            "3. Provide a risk-balanced recommendation.",
+            "",
+            "Format with clear headings: Robust Insights, Divergences, Recommendation.",
+        ])
+
+        meta_orchestrator = DebateOrchestrator()
+        async for msg in meta_orchestrator.stream_debate(
+            meta_prompt,
+            model,
+            previous_context="",
+            selected_agents=["synthesizer"],
+            industry=industry,
+            api_key_override=api_key_override,
+        ):
+            msg = dict(msg)
+            msg["branchId"] = "meta"
+            yield msg
 
     def _build_debate_rounds(self) -> List[DebateRound]:
         """

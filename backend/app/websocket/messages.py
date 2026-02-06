@@ -20,6 +20,17 @@ class StartDebateMessage(TypedDict):
     apiKey: Optional[str]  # Optional user-provided Cerebras API key
 
 
+class StartBranchingMessage(TypedDict):
+    """Message to start branching scenarios with a base query"""
+    type: Literal["start_branching"]
+    query: str
+    model: Optional[str]
+    previousContext: Optional[str]
+    selectedAgents: Optional[List[str]]
+    industry: Optional[str]
+    apiKey: Optional[str]
+
+
 # Outbound messages (server → client)
 
 class AgentTokenMessage(TypedDict):
@@ -27,12 +38,14 @@ class AgentTokenMessage(TypedDict):
     type: Literal["agent_token"]
     agentId: str
     content: str
+    branchId: Optional[str]
     timestamp: int
 
 
 class DebateCompleteMessage(TypedDict):
     """Signal that the debate is complete"""
     type: Literal["debate_complete"]
+    branchId: Optional[str]
     timestamp: int
 
 
@@ -40,6 +53,7 @@ class ErrorMessage(TypedDict):
     """Error response"""
     type: Literal["error"]
     message: str
+    branchId: Optional[str]
     timestamp: int
 
 
@@ -55,6 +69,7 @@ class PhaseChangeMessage(TypedDict):
     type: Literal["phase_change"]
     phase: str  # "dispatch", "conflict", "synthesis", "convergence"
     activeAgents: list[str]
+    branchId: Optional[str]
     timestamp: int
 
 
@@ -63,6 +78,7 @@ class MetricsMessage(TypedDict):
     type: Literal["metrics"]
     tokensPerSecond: int
     totalTokens: int
+    branchId: Optional[str]
     timestamp: int
 
 
@@ -70,6 +86,7 @@ class AgentDoneMessage(TypedDict):
     """Agent completed streaming"""
     type: Literal["agent_done"]
     agentId: str
+    branchId: Optional[str]
     timestamp: int
 
 
@@ -78,12 +95,14 @@ class AgentErrorMessage(TypedDict):
     type: Literal["agent_error"]
     agentId: str
     error: str
+    branchId: Optional[str]
     timestamp: int
 
 
 # Union type for all messages
 WebSocketMessage = (
     StartDebateMessage |
+    StartBranchingMessage |
     AgentTokenMessage |
     DebateCompleteMessage |
     ErrorMessage |

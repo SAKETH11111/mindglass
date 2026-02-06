@@ -29,6 +29,12 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     addCheckpoint,
     setUserProxyNode,
     setShowApiKeyModal,
+    startScenarioRun,
+    appendBranchToken,
+    setBranchMetrics,
+    setBranchPhase,
+    setBranchAgentDone,
+    setBranchAgentError,
   } = useDebateStore();
   const apiKey = useApiKeyStore((state) => state.apiKey);
 
@@ -87,6 +93,54 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
           const data: WebSocketMessage = JSON.parse(event.data);
           const debateStartTime = useDebateStore.getState().debateStartTime;
           const getTimestamp = () => debateStartTime ? Date.now() - debateStartTime : 0;
+          const branchId = 'branchId' in data ? data.branchId : undefined;
+
+          if (branchId) {
+            switch (data.type) {
+              case 'agent_token': {
+                appendBranchToken(branchId, data.agentId, data.content);
+                break;
+              }
+              case 'agent_metrics': {
+                setBranchMetrics(branchId, data.agentId, {
+                  tokensPerSecond: data.tokensPerSecond,
+                  totalTokens: data.totalTokens,
+                  promptTokens: data.promptTokens,
+                  completionTokens: data.completionTokens,
+                  completionTime: data.completionTime,
+                });
+                break;
+              }
+              case 'agent_done': {
+                setBranchAgentDone(branchId, data.agentId);
+                break;
+              }
+              case 'agent_error': {
+                setBranchAgentError(branchId, data.agentId, data.error);
+                break;
+              }
+              case 'phase_start': {
+                setBranchPhase(branchId, data.name as Phase, (data.agents || []) as AgentId[]);
+                break;
+              }
+              case 'round_start': {
+                setBranchPhase(branchId, data.name as Phase, (data.agents || []) as AgentId[]);
+                break;
+              }
+              case 'debate_complete': {
+                setBranchAgentDone(branchId, 'synthesizer');
+                break;
+              }
+              case 'error': {
+                setBranchAgentError(branchId, 'synthesizer', data.message);
+                break;
+              }
+              default: {
+                break;
+              }
+            }
+            return;
+          }
 
           switch (data.type) {
             case 'agent_token': {
@@ -304,5 +358,25 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     return sendMessage({ type: 'inject_constraint', constraint });
   }, [sendMessage]);
 
-  return { sendMessage, isReady, retry, startDebateSession, startFollowUpSession, injectConstraint };
+  const startScenarioSession = useCallback((
+    query: string,
+    model?: string,
+    previousContext?: string,
+    selectedAgents?: AgentId[],
+    industry?: string
+  ) => {
+    startScenarioRun();
+    const resolvedApiKey = apiKey?.trim() || undefined;
+    return sendMessage({
+      type: 'start_branching',
+      query,
+      model: model || 'pro',
+      previousContext: previousContext || '',
+      selectedAgents: selectedAgents || null,
+      industry: industry || '',
+      ...(resolvedApiKey ? { apiKey: resolvedApiKey } : {}),
+    });
+  }, [sendMessage, startScenarioRun, apiKey]);
+
+  return { sendMessage, isReady, retry, startDebateSession, startFollowUpSession, startScenarioSession, injectConstraint };
 }

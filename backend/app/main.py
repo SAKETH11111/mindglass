@@ -92,6 +92,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
     stream_task: asyncio.Task | None = None
     stream_id: str | None = None
+    branch_stream_task: asyncio.Task | None = None
+    branch_stream_id: str | None = None
+    send_lock = asyncio.Lock()
+
+    async def safe_send(payload: dict):
+        async with send_lock:
+            await websocket.send_json(payload)
 
     async def run_stream(
         query: str,
@@ -111,7 +118,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 industry,
                 api_key_override=api_key,
             ):
-                await websocket.send_json(token)
+                await safe_send(token)
             print(f"[{datetime.now().isoformat()}] Debate complete")
         except asyncio.CancelledError:
             print(f"[{datetime.now().isoformat()}] Debate stream cancelled")
@@ -119,7 +126,37 @@ async def websocket_endpoint(websocket: WebSocket):
             error_msg = f"Error during streaming: {str(e)}"
             print(f"[{datetime.now().isoformat()}] {error_msg}")
             try:
-                await websocket.send_json(create_error(error_msg))
+                await safe_send(create_error(error_msg))
+            except Exception:
+                pass
+
+    async def run_branching_stream(
+        query: str,
+        model: str,
+        previous_context: str = "",
+        selected_agents: list = None,
+        industry: str = "",
+        api_key: str | None = None,
+    ):
+        try:
+            print(f"[{datetime.now().isoformat()}] Branching start id={branch_stream_id} model={model} industry={industry or 'generic'}")
+            async for token in orchestrator.stream_branching_debate(
+                query,
+                model,
+                previous_context,
+                selected_agents,
+                industry,
+                api_key_override=api_key,
+            ):
+                await safe_send(token)
+            print(f"[{datetime.now().isoformat()}] Branching complete")
+        except asyncio.CancelledError:
+            print(f"[{datetime.now().isoformat()}] Branching stream cancelled")
+        except Exception as e:
+            error_msg = f"Error during branching: {str(e)}"
+            print(f"[{datetime.now().isoformat()}] {error_msg}")
+            try:
+                await safe_send(create_error(error_msg))
             except Exception:
                 pass
 
@@ -144,20 +181,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 api_key = (message.get("apiKey") or "").strip() or None
 
                 if api_key and not is_valid_api_key(api_key):
-                    await websocket.send_json(
+                    await safe_send(
                         create_error("Invalid API key format. Expected a Cerebras key like csk-...")
                     )
                     continue
 
                 if not api_key and not settings.CEREBRAS_API_KEY:
-                    await websocket.send_json(
+                    await safe_send(
                         create_error("Server is missing CEREBRAS_API_KEY. Provide your own API key in settings.")
                     )
                     continue
 
                 # Validate query is not empty
                 if not query:
-                    await websocket.send_json(create_error("Query cannot be empty"))
+                    await safe_send(create_error("Query cannot be empty"))
                     continue
 
                 print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'} | Industry: {industry or 'generic'}")
@@ -176,6 +213,46 @@ async def websocket_endpoint(websocket: WebSocket):
                     run_stream(query, model, previous_context, selected_agents, industry, api_key)
                 )
 
+            elif message.get("type") == "start_branching":
+                query = message.get("query", "").strip()
+                model = message.get("model", "pro")
+                previous_context = message.get("previousContext", "")
+                selected_agents = message.get("selectedAgents", None)
+                industry = message.get("industry", "")
+                api_key = (message.get("apiKey") or "").strip() or None
+
+                if api_key and not is_valid_api_key(api_key):
+                    await safe_send(
+                        create_error("Invalid API key format. Expected a Cerebras key like csk-...")
+                    )
+                    continue
+
+                if not api_key and not settings.CEREBRAS_API_KEY:
+                    await safe_send(
+                        create_error("Server is missing CEREBRAS_API_KEY. Provide your own API key in settings.")
+                    )
+                    continue
+
+                if not query:
+                    await safe_send(create_error("Query cannot be empty"))
+                    continue
+
+                print(
+                    f"[{datetime.now().isoformat()}] Starting branching - "
+                    f"Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'} | "
+                    f"Industry: {industry or 'generic'}"
+                )
+
+                if branch_stream_task and not branch_stream_task.done():
+                    print(f"[{datetime.now().isoformat()}] Cancelling prior branching id={branch_stream_id}")
+                    branch_stream_task.cancel()
+                    await asyncio.sleep(0)
+
+                branch_stream_id = str(uuid.uuid4())
+                branch_stream_task = asyncio.create_task(
+                    run_branching_stream(query, model, previous_context, selected_agents, industry, api_key)
+                )
+
             elif message.get("type") == "inject_constraint":
                 # PRD Feature: Interrupt & Inject constraint mid-debate
                 constraint = message.get("constraint", "").strip()
@@ -190,27 +267,29 @@ async def websocket_endpoint(websocket: WebSocket):
                         "timestamp": int(datetime.now().timestamp() * 1000)
                     }
                     print(f"[{datetime.now().isoformat()}] WS send: {ack}")
-                    await websocket.send_json(ack)
+                    await safe_send(ack)
                 else:
-                    await websocket.send_json(create_error("Constraint cannot be empty"))
+                    await safe_send(create_error("Constraint cannot be empty"))
 
             else:
                 # Unknown message type
-                await websocket.send_json(create_error(f"Unknown message type: {message.get('type')}"))
+                await safe_send(create_error(f"Unknown message type: {message.get('type')}"))
 
     except WebSocketDisconnect:
         disconnection_time = datetime.now().isoformat()
         print(f"[{disconnection_time}] WebSocket disconnected - Client: {client_id}")
         if stream_task and not stream_task.done():
             stream_task.cancel()
+        if branch_stream_task and not branch_stream_task.done():
+            branch_stream_task.cancel()
     except json.JSONDecodeError as e:
         error_time = datetime.now().isoformat()
         print(f"[{error_time}] JSON decode error: {e}")
-        await websocket.send_json(create_error("Invalid JSON message"))
+        await safe_send(create_error("Invalid JSON message"))
     except Exception as e:
         error_time = datetime.now().isoformat()
         print(f"[{error_time}] WebSocket error: {e}")
-        await websocket.send_json(create_error(f"Server error: {str(e)}"))
+        await safe_send(create_error(f"Server error: {str(e)}"))
 
 
 if __name__ == "__main__":

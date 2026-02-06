@@ -13,6 +13,10 @@ import type { GraphNode, GraphEdge } from '@/types/graph';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+export type ScenarioBranchId = 'best' | 'base' | 'worst';
+export type BranchId = ScenarioBranchId | 'meta';
+export type BranchStatus = 'idle' | 'running' | 'complete';
+
 interface AgentMetricsPayload {
   tokensPerSecond: number;
   totalTokens: number;
@@ -127,6 +131,13 @@ interface DebateState {
 
   showApiKeyModal: boolean;
 
+  // Scenario branching state
+  branchStatus: Record<ScenarioBranchId, BranchStatus>;
+  branchAgents: Record<ScenarioBranchId, Record<string, AgentState>>;
+  branchSyntheses: Record<ScenarioBranchId, string>;
+  metaSynthesis: string | null;
+  metaStatus: BranchStatus;
+
   // Actions
   setConnectionState: (state: ConnectionState) => void;
   startDebate: (query: string, industry?: string) => void;
@@ -174,6 +185,14 @@ interface DebateState {
   // Custom API key actions
   setShowApiKeyModal: (show: boolean) => void;
 
+  // Scenario actions
+  startScenarioRun: () => void;
+  appendBranchToken: (branchId: BranchId, agentId: string, content: string) => void;
+  setBranchMetrics: (branchId: BranchId, agentId: string, metrics: AgentMetricsPayload) => void;
+  setBranchPhase: (branchId: BranchId, phase: Phase, activeAgents: string[]) => void;
+  setBranchAgentDone: (branchId: BranchId, agentId: string) => void;
+  setBranchAgentError: (branchId: BranchId, agentId: string, error: string) => void;
+
   // Simulated TPS for demo
   startSimulatedTps: () => void;
   stopSimulatedTps: () => void;
@@ -203,6 +222,23 @@ const createInitialAgents = (industry?: string): Record<string, AgentState> => {
   }
   return agents;
 };
+
+const createDefaultAgent = (agentId: string): AgentState => ({
+  id: agentId,
+  name: AGENT_NAMES[agentId] || agentId,
+  text: '',
+  color: AGENT_COLORS[agentId] || '#6B7280',
+  phase: null,
+  isActive: true,
+  isStreaming: false,
+  tokenCount: 0,
+  tokensPerSecond: 0,
+  streamStartTime: null,
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  completionTime: 0,
+});
 
 const initialState = {
   connectionState: 'connecting' as ConnectionState,
@@ -236,6 +272,25 @@ const initialState = {
   currentTurnIndex: 0,
   // Custom API key
   showApiKeyModal: false,
+
+  // Scenario branching state
+  branchStatus: {
+    best: 'idle',
+    base: 'idle',
+    worst: 'idle',
+  } as Record<ScenarioBranchId, BranchStatus>,
+  branchAgents: {
+    best: {},
+    base: {},
+    worst: {},
+  } as Record<ScenarioBranchId, Record<string, AgentState>>,
+  branchSyntheses: {
+    best: '',
+    base: '',
+    worst: '',
+  } as Record<ScenarioBranchId, string>,
+  metaSynthesis: null as string | null,
+  metaStatus: 'idle' as BranchStatus,
 };
 
 export const useDebateStore = create<DebateState>()(
@@ -267,6 +322,11 @@ export const useDebateStore = create<DebateState>()(
         completedTurns: [],
         followUpNodes: [],
         currentTurnIndex: 0,
+        branchStatus: { best: 'idle', base: 'idle', worst: 'idle' },
+        branchAgents: { best: {}, base: {}, worst: {} },
+        branchSyntheses: { best: '', base: '', worst: '' },
+        metaSynthesis: null,
+        metaStatus: 'idle',
       }),
 
     initializeAgentsForIndustry: (industry) =>
@@ -629,6 +689,11 @@ export const useDebateStore = create<DebateState>()(
         activeCheckpointIndex: null,
         debateStartTime: Date.now(),
         currentTurnIndex: state.currentTurnIndex + 1,
+        branchStatus: { best: 'idle', base: 'idle', worst: 'idle' },
+        branchAgents: { best: {}, base: {}, worst: {} },
+        branchSyntheses: { best: '', base: '', worst: '' },
+        metaSynthesis: null,
+        metaStatus: 'idle',
         // Keep: completedTurns, followUpNodes, nodes, edges preserved
       })),
 
@@ -642,6 +707,177 @@ export const useDebateStore = create<DebateState>()(
       }),
 
     setShowApiKeyModal: (show) => set({ showApiKeyModal: show }),
+
+    startScenarioRun: () =>
+      set({
+        branchStatus: { best: 'running', base: 'running', worst: 'running' },
+        branchAgents: { best: {}, base: {}, worst: {} },
+        branchSyntheses: { best: '', base: '', worst: '' },
+        metaSynthesis: null,
+        metaStatus: 'idle',
+      }),
+
+    appendBranchToken: (branchId, agentId, content) =>
+      set((state) => {
+        if (branchId === 'meta') {
+          const nextText = `${state.metaSynthesis || ''}${content}`;
+          return {
+            metaSynthesis: nextText,
+            metaStatus: state.metaStatus === 'idle' ? 'running' : state.metaStatus,
+          };
+        }
+
+        const branchAgents = state.branchAgents[branchId] || {};
+        let agent = branchAgents[agentId];
+        if (!agent) {
+          agent = createDefaultAgent(agentId);
+        }
+
+        const now = Date.now();
+        const streamStartTime = agent.streamStartTime || now;
+        const newTokenCount = agent.tokenCount + 1;
+        const elapsedSeconds = (now - streamStartTime) / 1000;
+        const tokensPerSecond = elapsedSeconds > 0 ? Math.round(newTokenCount / elapsedSeconds) : 0;
+
+        const updatedAgent: AgentState = {
+          ...agent,
+          text: agent.text + content,
+          isStreaming: true,
+          tokenCount: newTokenCount,
+          tokensPerSecond,
+          streamStartTime,
+        };
+
+        return {
+          branchAgents: {
+            ...state.branchAgents,
+            [branchId]: {
+              ...branchAgents,
+              [agentId]: updatedAgent,
+            },
+          },
+          branchSyntheses: agentId === 'synthesizer'
+            ? {
+              ...state.branchSyntheses,
+              [branchId]: `${state.branchSyntheses[branchId]}${content}`,
+            }
+            : state.branchSyntheses,
+          branchStatus: state.branchStatus[branchId] === 'idle'
+            ? { ...state.branchStatus, [branchId]: 'running' }
+            : state.branchStatus,
+        };
+      }),
+
+    setBranchMetrics: (branchId, agentId, metrics) =>
+      set((state) => {
+        if (branchId === 'meta') return state;
+        const branchAgents = state.branchAgents[branchId] || {};
+        const agent = branchAgents[agentId] || createDefaultAgent(agentId);
+
+        const updatedAgent: AgentState = {
+          ...agent,
+          tokensPerSecond: metrics.tokensPerSecond,
+          tokenCount: metrics.completionTokens,
+          promptTokens: metrics.promptTokens,
+          completionTokens: metrics.completionTokens,
+          totalTokens: metrics.totalTokens,
+          completionTime: metrics.completionTime,
+        };
+
+        return {
+          branchAgents: {
+            ...state.branchAgents,
+            [branchId]: {
+              ...branchAgents,
+              [agentId]: updatedAgent,
+            },
+          },
+        };
+      }),
+
+    setBranchPhase: (branchId, phase, activeAgents) =>
+      set((state) => {
+        if (branchId === 'meta') {
+          return {
+            metaStatus: state.metaStatus === 'idle' ? 'running' : state.metaStatus,
+          };
+        }
+
+        const branchAgents = { ...(state.branchAgents[branchId] || {}) };
+        for (const agentId of activeAgents) {
+          const agent = branchAgents[agentId] || createDefaultAgent(agentId);
+          branchAgents[agentId] = {
+            ...agent,
+            phase,
+            isActive: true,
+            isStreaming: true,
+          };
+        }
+
+        return {
+          branchAgents: {
+            ...state.branchAgents,
+            [branchId]: branchAgents,
+          },
+          branchStatus: state.branchStatus[branchId] === 'idle'
+            ? { ...state.branchStatus, [branchId]: 'running' }
+            : state.branchStatus,
+        };
+      }),
+
+    setBranchAgentDone: (branchId, agentId) =>
+      set((state) => {
+        if (branchId === 'meta') {
+          return {
+            metaStatus: agentId === 'synthesizer' ? 'complete' : state.metaStatus,
+          };
+        }
+
+        const branchAgents = state.branchAgents[branchId] || {};
+        const agent = branchAgents[agentId] || createDefaultAgent(agentId);
+        const updatedAgents = {
+          ...branchAgents,
+          [agentId]: {
+            ...agent,
+            isStreaming: false,
+          },
+        };
+
+        return {
+          branchAgents: {
+            ...state.branchAgents,
+            [branchId]: updatedAgents,
+          },
+          branchStatus: agentId === 'synthesizer'
+            ? { ...state.branchStatus, [branchId]: 'complete' }
+            : state.branchStatus,
+        };
+      }),
+
+    setBranchAgentError: (branchId, agentId, _error) =>
+      set((state) => {
+        if (branchId === 'meta') {
+          return {
+            metaStatus: 'complete',
+          };
+        }
+        const branchAgents = state.branchAgents[branchId] || {};
+        const agent = branchAgents[agentId] || createDefaultAgent(agentId);
+        return {
+          branchAgents: {
+            ...state.branchAgents,
+            [branchId]: {
+              ...branchAgents,
+              [agentId]: {
+                ...agent,
+                isStreaming: false,
+                isActive: false,
+              },
+            },
+          },
+          branchStatus: { ...state.branchStatus, [branchId]: 'complete' },
+        };
+      }),
 
     // Simulated TPS for demo (random between 1800-2500)
     startSimulatedTps: () => {
