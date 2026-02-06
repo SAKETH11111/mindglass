@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { Send, MessageSquarePlus, BarChart3, Clock, GitBranch } from 'lucide-react';
+import { Send, MessageSquarePlus, BarChart3, Clock } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, type BaseAgentId } from '@/types/agent';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -183,8 +183,6 @@ export function DebatePage() {
   const [isBenchOpen, setIsBenchOpen] = useState(false);
   const [benchCopied, setBenchCopied] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isScenariosOpen, setIsScenariosOpen] = useState(false);
-  const [pendingScenarioStart, setPendingScenarioStart] = useState(false);
 
   // Collapsible section state - for auto-open/close behavior
   const [isPerspectivesOpen, setIsPerspectivesOpen] = useState(true);
@@ -219,11 +217,6 @@ export function DebatePage() {
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const resetDebate = useDebateStore((state) => state.resetDebate);
   const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
-  const branchStatus = useDebateStore((state) => state.branchStatus);
-  const branchAgents = useDebateStore((state) => state.branchAgents);
-  const branchSyntheses = useDebateStore((state) => state.branchSyntheses);
-  const metaSynthesis = useDebateStore((state) => state.metaSynthesis);
-  const metaStatus = useDebateStore((state) => state.metaStatus);
 
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
@@ -251,15 +244,7 @@ export function DebatePage() {
   const [isInjecting, setIsInjecting] = useState(false);
 
   // WebSocket connection
-  const { isReady, startDebateSession, startScenarioSession, injectConstraint } = useWebSocket({ autoConnect: true });
-
-  const scenariosEnabled = phase === 'complete' && isReady;
-  const scenariosStarted = Object.values(branchStatus).some((status) => status !== 'idle')
-    || metaStatus !== 'idle'
-    || Boolean(metaSynthesis);
-  const scenariosRunning = Object.values(branchStatus).some((status) => status === 'running')
-    || metaStatus === 'running';
-  const scenarioQuery = debateQuery || query;
+  const { isReady, startDebateSession, injectConstraint } = useWebSocket({ autoConnect: true });
 
   // User constraint state from store
   const constraints = useDebateStore((state) => state.constraints);
@@ -496,43 +481,6 @@ export function DebatePage() {
     hasStartedRef.current = true;
   };
 
-  const handleScenariosOpen = useCallback(() => {
-    setIsScenariosOpen(true);
-    if (!scenariosEnabled || scenariosStarted) {
-      if (!isReady) setPendingScenarioStart(true);
-      return;
-    }
-    const previousContext = getPreviousTurnsContext();
-    startScenarioSession(scenarioQuery, modelTier, previousContext, selectedAgentsFromUrl);
-  }, [
-    scenariosEnabled,
-    scenariosStarted,
-    getPreviousTurnsContext,
-    scenarioQuery,
-    modelTier,
-    selectedAgentsFromUrl,
-    startScenarioSession,
-    isReady,
-  ]);
-
-  useEffect(() => {
-    if (!pendingScenarioStart) return;
-    if (!isReady || !scenariosEnabled || scenariosStarted) return;
-    const previousContext = getPreviousTurnsContext();
-    startScenarioSession(scenarioQuery, modelTier, previousContext, selectedAgentsFromUrl);
-    setPendingScenarioStart(false);
-  }, [
-    pendingScenarioStart,
-    isReady,
-    scenariosEnabled,
-    scenariosStarted,
-    getPreviousTurnsContext,
-    scenarioQuery,
-    modelTier,
-    selectedAgentsFromUrl,
-    startScenarioSession,
-  ]);
-
   const handleSelectSession = useCallback((sessionId: string) => {
     const session = loadSession(sessionId);
     if (session) {
@@ -548,12 +496,6 @@ export function DebatePage() {
     resetDebate();
     navigate('/');
   }, [navigate, resetDebate]);
-
-  const scenarioCards = [
-    { id: 'best', title: 'Best Case', hint: 'Ideal conditions' },
-    { id: 'base', title: 'Base Case', hint: 'Realistic conditions' },
-    { id: 'worst', title: 'Worst Case', hint: 'Adverse conditions' },
-  ] as const;
 
   // Handle constraint injection (PRD: Interrupt & Inject)
   const handleInjectConstraint = async (e: React.FormEvent) => {
@@ -823,93 +765,6 @@ export function DebatePage() {
                   ) : (
                     <p className="text-sm text-white/50 font-mono">No benchmark report available.</p>
                   )}
-                </DialogContent>
-              </Dialog>
-
-              <Dialog open={isScenariosOpen} onOpenChange={setIsScenariosOpen}>
-                <DialogTrigger asChild>
-                  <button
-                    disabled={!scenariosEnabled}
-                    onClick={handleScenariosOpen}
-                    className={`
-                      flex items-center gap-2 transition-colors
-                      ${scenariosEnabled ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
-                    `}
-                    title={scenariosEnabled ? 'Run scenario branches' : isReady ? 'Scenarios unlock after the main debate completes' : 'Waiting for WebSocket connection'}
-                  >
-                    <GitBranch className="w-4 h-4" />
-                    <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">SCENARIOS</span>
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-w-5xl bg-[#0a0a0a] border border-white/10 text-white">
-                <DialogHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
-                      Scenario Branches
-                    </DialogTitle>
-                    {scenariosRunning && (
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">
-                        Running...
-                      </span>
-                    )}
-                  </div>
-                </DialogHeader>
-                <DialogDescription className="sr-only">
-                  Parallel scenario branches with a meta-synthesis summary.
-                </DialogDescription>
-                {!isReady && (
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-white/30">
-                    Waiting for WebSocket connection…
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {scenarioCards.map((scenario) => {
-                      const status = branchStatus[scenario.id];
-                      const summary = branchAgents[scenario.id]?.synthesizer?.text || branchSyntheses[scenario.id];
-                      const placeholder = status === 'running'
-                        ? 'Streaming response...'
-                        : status === 'complete'
-                          ? 'Summary complete.'
-                          : 'Not run yet.';
-                      return (
-                        <div
-                          key={scenario.id}
-                          className="bg-white/[0.03] border border-white/[0.06] p-3 min-h-[220px] flex flex-col"
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="text-xs font-mono uppercase tracking-wider text-white/80">{scenario.title}</p>
-                              <p className="text-[10px] text-white/40 font-mono uppercase tracking-wider">{scenario.hint}</p>
-                            </div>
-                            <span
-                              className={`text-[10px] font-mono uppercase tracking-wider ${
-                                status === 'complete' ? 'text-emerald-400' :
-                                status === 'running' ? 'text-[#F15A29]' :
-                                'text-white/30'
-                              }`}
-                            >
-                              {status}
-                            </span>
-                          </div>
-                          <div className="text-xs text-white/70 whitespace-pre-wrap font-mono flex-1">
-                            {summary || placeholder}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-4 bg-white/[0.02] border border-white/[0.08] p-4">
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">
-                      Meta-Synthesis
-                    </p>
-                    <div className="text-sm text-white/80 whitespace-pre-wrap font-mono">
-                      {metaSynthesis || (metaStatus === 'running'
-                        ? 'Synthesizing across scenarios...'
-                        : 'Waiting for scenarios to complete.')}
-                    </div>
-                  </div>
                 </DialogContent>
               </Dialog>
 
