@@ -210,7 +210,6 @@ export function DebatePage() {
 
   // Store state
   const agents = useDebateStore((state) => state.agents);
-  const debateQuery = useDebateStore((state) => state.query);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const connectionState = useDebateStore((state) => state.connectionState);
