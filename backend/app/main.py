@@ -31,7 +31,13 @@ app = FastAPI(
 # CORS middleware configuration - using centralized settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://prism-cerebras.vercel.app",
+        "https://frontend-nine-iota-86.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel preview deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
