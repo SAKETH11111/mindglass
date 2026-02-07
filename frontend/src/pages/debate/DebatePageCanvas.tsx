@@ -54,6 +54,15 @@ const parseThinkTags = (text: string): { thinking: string; answer: string; isThi
   return { thinking: '', answer: text, isThinkingInProgress: false };
 };
 
+const areAgentListsEqual = (a: AgentId[], b: AgentId[]): boolean => {
+  if (a.length !== b.length) return false;
+  const bSet = new Set(b);
+  for (const id of a) {
+    if (!bSet.has(id)) return false;
+  }
+  return true;
+};
+
 export function DebatePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -73,18 +82,30 @@ export function DebatePage() {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const hasStartedRef = useRef(false);
   const hasAutoOpenedSynth = useRef(false);
+  const hasPersistedCompletedTurnRef = useRef(false);
   const hasHydratedSessionRef = useRef(false);
 
-  // Parse selected agents from URL (accepts any valid agent IDs)
-  const agentsFromUrl = agentsParam
-    ? agentsParam.split(',').filter(a => a.length > 0) as AgentId[]
-    : null;
+  // Parse and de-duplicate selected agents from URL
+  const agentsFromUrl = useMemo<AgentId[] | null>(() => {
+    if (!agentsParam) return null;
+    const validAgentIds = new Set(Object.keys(AGENT_NAMES));
+    const parsed: AgentId[] = [];
+    for (const raw of agentsParam.split(',')) {
+      const trimmed = raw.trim();
+      if (!trimmed || !validAgentIds.has(trimmed)) continue;
+      const agentId = trimmed as AgentId;
+      if (!parsed.includes(agentId)) parsed.push(agentId);
+    }
+    return parsed.length > 0 ? parsed : null;
+  }, [agentsParam]);
 
   // Store
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
+  const tokensPerSecond = useDebateStore((state) => state.tokensPerSecond);
   const totalTokens = useDebateStore((state) => state.totalTokens);
+  const checkpoints = useDebateStore((state) => state.checkpoints);
   const resetDebate = useDebateStore((state) => state.resetDebate);
   const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
 
@@ -115,12 +136,11 @@ export function DebatePage() {
     startNewTurn,
     completeTurn,
     updateTurnResponse,
+    updateTurnMetadata,
     loadSession,
     setSelectedAgents,
     selectedAgents: storeSelectedAgents,
   } = useSessionStore();
-
-  const selectedAgentsFromUrl = agentsFromUrl || storeSelectedAgents;
 
   // Get industry-specific agent IDs
   const industryAgentIds = useMemo<AgentId[]>(() => {
@@ -128,16 +148,30 @@ export function DebatePage() {
   }, [industryParam]);
 
   const effectiveSelectedAgents = useMemo<AgentId[]>(() => {
-    // If industry is set, use industry-specific agents
-    if (industryParam && industryParam !== 'any') {
-      return industryAgentIds;
-    }
-    // Otherwise use selected agents from URL or store
-    const base: AgentId[] = (selectedAgentsFromUrl && selectedAgentsFromUrl.length > 0)
-      ? selectedAgentsFromUrl
-      : AGENT_IDS;
-    return base.includes('synthesizer') ? base : [...base, 'synthesizer'];
-  }, [selectedAgentsFromUrl, industryParam, industryAgentIds]);
+    const allowedAgents = new Set(industryAgentIds);
+    const filterAllowed = (candidate: AgentId[] | null | undefined): AgentId[] => {
+      if (!candidate) return [];
+      const filtered: AgentId[] = [];
+      for (const id of candidate) {
+        if (!allowedAgents.has(id)) continue;
+        if (!filtered.includes(id)) filtered.push(id);
+      }
+      return filtered;
+    };
+
+    const urlScopedSelection = filterAllowed(agentsFromUrl);
+    const storeScopedSelection = filterAllowed(storeSelectedAgents);
+    const fallback: AgentId[] = industryParam && industryParam !== 'any' ? industryAgentIds : AGENT_IDS;
+    const baseSelection = urlScopedSelection.length > 0
+      ? urlScopedSelection
+      : (storeScopedSelection.length > 0 ? storeScopedSelection : fallback);
+
+    const withSynthesizer: AgentId[] = baseSelection.includes('synthesizer')
+      ? baseSelection
+      : [...baseSelection, 'synthesizer'];
+
+    return filterAllowed(withSynthesizer);
+  }, [agentsFromUrl, storeSelectedAgents, industryParam, industryAgentIds]);
 
   const hydrateFromSession = useCallback((session: ConsultationSession) => {
     if (!session.turns.length) return false;
@@ -183,14 +217,24 @@ export function DebatePage() {
       turnIndex: index + 1,
     }));
 
+    const lastCheckpointMs = lastTurn.checkpoints && lastTurn.checkpoints.length > 0
+      ? lastTurn.checkpoints[lastTurn.checkpoints.length - 1].timestamp
+      : 0;
+    const restoredElapsedMs = lastTurn.elapsedMs ?? lastTurn.benchmarkReport?.e2eMs ?? lastCheckpointMs;
+    const restoredTokensPerSecond = lastTurn.tokensPerSecond ?? 0;
+    const restoredTotalTokens = lastTurn.totalTokens ?? 0;
+    const restoredCheckpoints = lastTurn.checkpoints ?? [];
+    const restoredDebateStart = restoredElapsedMs > 0 ? Date.now() - restoredElapsedMs : Date.now();
+
     useDebateStore.setState((state) => ({
       ...state,
       query: lastTurn.query,
       phase: 'complete',
       isDebating: false,
       agents: agentsState,
-      tokensPerSecond: 0,
-      totalTokens: 0,
+      tokensPerSecond: restoredTokensPerSecond,
+      totalTokens: restoredTotalTokens,
+      benchmarkReport: lastTurn.benchmarkReport ?? null,
       error: null,
       currentIndustry: industryParam || null,
       nodes: [],
@@ -198,14 +242,16 @@ export function DebatePage() {
       selectedNodeId: null,
       constraints: [],
       userProxyNode: null,
-      checkpoints: [],
+      checkpoints: restoredCheckpoints,
       activeCheckpointIndex: null,
-      debateStartTime: null,
+      debateStartTime: restoredDebateStart,
       completedTurns,
       followUpNodes,
       currentTurnIndex: turns.length - 1,
     }));
 
+    hasPersistedCompletedTurnRef.current = true;
+    setElapsedMs(restoredElapsedMs);
     setShowFollowUp(lastTurn.isComplete);
     setSelectedNodeId('node-synthesizer');
     return true;
@@ -226,19 +272,18 @@ export function DebatePage() {
   const debateStartTime = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Initialize selected agents from URL if provided (only once)
-  const hasInitializedAgents = useRef(false);
+  // Keep session-store selection synchronized with URL/industry-derived selection
   useEffect(() => {
-    if (!hasInitializedAgents.current && agentsFromUrl && agentsFromUrl.length > 0) {
-      hasInitializedAgents.current = true;
-      setSelectedAgents(agentsFromUrl);
+    if (!areAgentListsEqual(storeSelectedAgents, effectiveSelectedAgents)) {
+      setSelectedAgents(effectiveSelectedAgents);
     }
-  }, []); // Empty dependency array - run once on mount
+  }, [effectiveSelectedAgents, setSelectedAgents, storeSelectedAgents]);
 
   // Reset auto-open state for each new debate
   useEffect(() => {
     if (isDebating) {
       hasAutoOpenedSynth.current = false;
+      hasPersistedCompletedTurnRef.current = false;
     }
   }, [isDebating, query]);
 
@@ -274,6 +319,7 @@ export function DebatePage() {
       lastUrlQueryRef.current = query;
       resetDebate();
       hasStartedRef.current = false;
+      hasPersistedCompletedTurnRef.current = false;
       setShowFollowUp(false);
       setFollowUpInput('');
       setSelectedNodeId(null);
@@ -287,26 +333,35 @@ export function DebatePage() {
       hasStartedRef.current = true;
       debateStartTime.current = Date.now();
 
-      // Initialize agents if not already done (avoid double-setting)
-      if (!hasInitializedAgents.current && agentsFromUrl && agentsFromUrl.length > 0) {
-        hasInitializedAgents.current = true;
-        setSelectedAgents(agentsFromUrl);
-      }
-
       const previousContext = getPreviousTurnsContext();
       startNewTurn(query);
       startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam);
     }
-  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, agentsFromUrl, setSelectedAgents, industryParam]);
+  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, industryParam]);
 
   // Mark turn complete when debate ends
   useEffect(() => {
     if (hasHydratedSessionRef.current) return;
-    if (phase === 'complete' && !isDebating) {
+    if (phase === 'complete' && !isDebating && !hasPersistedCompletedTurnRef.current) {
+      hasPersistedCompletedTurnRef.current = true;
+      const lastCheckpointMs = checkpoints.length > 0
+        ? checkpoints[checkpoints.length - 1].timestamp
+        : 0;
+      const completedElapsedMs = benchmarkReport?.e2eMs ?? lastCheckpointMs ?? elapsedMs;
+      updateTurnMetadata({
+        benchmarkReport,
+        checkpoints,
+        elapsedMs: completedElapsedMs,
+        tokensPerSecond,
+        totalTokens,
+      });
+      if (completedElapsedMs > 0) {
+        setElapsedMs(completedElapsedMs);
+      }
       completeTurn();
       setShowFollowUp(true);
     }
-  }, [phase, isDebating, completeTurn]);
+  }, [phase, isDebating, completeTurn, updateTurnMetadata, benchmarkReport, checkpoints, tokensPerSecond, totalTokens, elapsedMs]);
 
   // Sync agent responses to session store (throttled to prevent infinite loops)
   const lastSyncedResponses = useRef<Record<string, string>>({});
@@ -376,6 +431,7 @@ export function DebatePage() {
     addFollowUpQuestion(newQuery);
     
     // 3. Start a new debate round for the follow-up (in-place, no navigation)
+    hasPersistedCompletedTurnRef.current = false;
     startFollowUpDebate(newQuery);
     
     // 4. Mark that we've started so the main effect doesn't double-trigger

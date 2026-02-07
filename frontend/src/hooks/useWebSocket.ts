@@ -11,6 +11,8 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
   const ws = useRef<WebSocket | null>(null);
   const retryCount = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoConnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isUnmountingRef = useRef(false);
   const [isReady, setIsReady] = useState(false);
   const pendingMessagesRef = useRef<object[]>([]);
 
@@ -47,6 +49,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       ws.current = new WebSocket(WS_URL);
 
       ws.current.onopen = () => {
+        if (isUnmountingRef.current) return;
         console.log('WebSocket connected');
         setConnectionState('connected');
         retryCount.current = 0;
@@ -61,6 +64,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       };
 
       ws.current.onclose = () => {
+        if (isUnmountingRef.current) return;
         console.log('WebSocket disconnected');
         setConnectionState('disconnected');
         setIsReady(false);
@@ -82,6 +86,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       };
 
       ws.current.onerror = (error) => {
+        if (isUnmountingRef.current) return;
         console.error('WebSocket error:', error);
         setConnectionState('error');
         // Show API key modal on connection errors
@@ -89,6 +94,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       };
 
       ws.current.onmessage = (event) => {
+        if (isUnmountingRef.current) return;
         try {
           const data: WebSocketMessage = JSON.parse(event.data);
           const debateStartTime = useDebateStore.getState().debateStartTime;
@@ -273,15 +279,36 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
   }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, setBenchmarkReport, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
 
   useEffect(() => {
+    isUnmountingRef.current = false;
     if (autoConnect) {
-      connect();
+      // Defer auto-connect by one macrotask so React StrictMode dev remount
+      // can cancel the first pass before creating a transient socket.
+      autoConnectTimeoutRef.current = setTimeout(() => {
+        if (!isUnmountingRef.current) {
+          connect();
+        }
+      }, 0);
     }
     return () => {
+      isUnmountingRef.current = true;
+      if (autoConnectTimeoutRef.current) {
+        clearTimeout(autoConnectTimeoutRef.current);
+      }
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
       if (ws.current) {
-        ws.current.close();
+        const socket = ws.current;
+        ws.current.onopen = null;
+        ws.current.onclose = null;
+        ws.current.onerror = null;
+        ws.current.onmessage = null;
+        // In dev StrictMode, the first mount is intentionally torn down.
+        // Closing a CONNECTING socket logs a noisy browser warning.
+        if (!(import.meta.env.DEV && socket.readyState === WebSocket.CONNECTING)) {
+          socket.close();
+        }
+        ws.current = null;
       }
     };
   }, [autoConnect, connect]);

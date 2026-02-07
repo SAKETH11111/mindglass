@@ -10,6 +10,40 @@ export interface DebateTurn {
   agentResponses: Record<AgentId, string>;
   selectedAgents: AgentId[];
   isComplete: boolean;
+  benchmarkReport?: {
+    e2eMs: number;
+    firstTokenMs: number | null;
+    rounds: Record<string, { name: string; agents: string[]; durationMs: number }>;
+    agents: Record<
+      string,
+      {
+        round: number;
+        model: string;
+        ttftMs: number | null;
+        avgItlMs: number | null;
+        p50ItlMs: number | null;
+        p95ItlMs: number | null;
+        chunks: number;
+        promptTokens?: number;
+        completionTokens?: number;
+        totalTokens?: number;
+        completionTimeSec?: number;
+        tokensPerSecond?: number;
+      }
+    >;
+  } | null;
+  checkpoints?: Array<{
+    id: string;
+    timestamp: number;
+    type: 'agent_done' | 'round_start' | 'constraint';
+    label: string;
+    agentId?: string;
+    roundName?: string;
+    agentTexts: Record<string, string>;
+  }>;
+  elapsedMs?: number;
+  tokensPerSecond?: number;
+  totalTokens?: number;
 }
 
 /**

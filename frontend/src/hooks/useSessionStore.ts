@@ -31,6 +31,9 @@ interface SessionState {
   startNewTurn: (query: string) => DebateTurn;
   completeTurn: () => void;
   updateTurnResponse: (agentId: AgentId, text: string) => void;
+  updateTurnMetadata: (
+    metadata: Partial<Pick<DebateTurn, 'benchmarkReport' | 'checkpoints' | 'elapsedMs' | 'tokensPerSecond' | 'totalTokens'>>
+  ) => void;
   
   // Agent selection
   setSelectedAgents: (agents: AgentId[]) => void;
@@ -179,6 +182,29 @@ export const useSessionStore = create<SessionState>()(
       
       set({ currentSession: updatedSession });
       // Don't save on every token - too expensive. Save on completeTurn.
+    },
+
+    updateTurnMetadata: (metadata) => {
+      const state = get();
+      const session = state.currentSession;
+      const turnIndex = state.currentTurnIndex;
+
+      if (!session || turnIndex < 0) return;
+
+      const updatedTurns = [...session.turns];
+      updatedTurns[turnIndex] = {
+        ...updatedTurns[turnIndex],
+        ...metadata,
+      };
+
+      const updatedSession = {
+        ...session,
+        turns: updatedTurns,
+        updatedAt: Date.now(),
+      };
+
+      set({ currentSession: updatedSession });
+      saveSession(updatedSession);
     },
 
     setSelectedAgents: (agents) => {

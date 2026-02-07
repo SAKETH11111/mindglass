@@ -1,10 +1,8 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import {
-  type AgentId,
   type AgentState,
   type Phase,
-  AGENT_IDS,
   AGENT_COLORS,
   AGENT_NAMES,
   getAgentIdsForIndustry,
@@ -488,7 +486,7 @@ export const useDebateStore = create<DebateState>()(
     endDebate: () =>
       set((state) => {
         const updatedAgents = { ...state.agents };
-        for (const agentId of AGENT_IDS) {
+        for (const agentId of Object.keys(updatedAgents)) {
           updatedAgents[agentId] = {
             ...updatedAgents[agentId],
             isStreaming: false,
@@ -509,7 +507,7 @@ export const useDebateStore = create<DebateState>()(
       agentText: '',
       isStreaming: false,
       currentAgentId: null,
-      agents: createInitialAgents(),
+      agents: createInitialAgents(undefined),
     }),
 
     // Graph actions
@@ -584,9 +582,9 @@ export const useDebateStore = create<DebateState>()(
     addCheckpoint: (checkpoint) =>
       set((state) => {
         // Capture current agent texts as snapshot
-        const agentTexts = {} as Record<AgentId, string>;
-        for (const id of AGENT_IDS) {
-          agentTexts[id] = state.agents[id].text;
+        const agentTexts: Record<string, string> = {};
+        for (const [id, agent] of Object.entries(state.agents)) {
+          agentTexts[id] = agent.text;
         }
         return {
           checkpoints: [...state.checkpoints, { ...checkpoint, agentTexts }],
@@ -600,7 +598,7 @@ export const useDebateStore = create<DebateState>()(
 
         // Restore agent texts to checkpoint snapshot
         const restoredAgents = { ...state.agents };
-        for (const id of AGENT_IDS) {
+        for (const id of Object.keys(restoredAgents)) {
           restoredAgents[id] = {
             ...restoredAgents[id],
             text: checkpoint.agentTexts[id] || '',
@@ -621,7 +619,7 @@ export const useDebateStore = create<DebateState>()(
         if (!latestCheckpoint) return { activeCheckpointIndex: null };
 
         const restoredAgents = { ...state.agents };
-        for (const id of AGENT_IDS) {
+        for (const id of Object.keys(restoredAgents)) {
           restoredAgents[id] = {
             ...restoredAgents[id],
             text: latestCheckpoint.agentTexts[id] || '',
@@ -641,9 +639,9 @@ export const useDebateStore = create<DebateState>()(
     saveCurrentTurn: () =>
       set((state) => {
         // Capture current agent texts as a completed turn
-        const agentTexts = {} as Record<AgentId, string>;
-        for (const id of AGENT_IDS) {
-          agentTexts[id] = state.agents[id].text;
+        const agentTexts: Record<string, string> = {};
+        for (const [id, agent] of Object.entries(state.agents)) {
+          agentTexts[id] = agent.text;
         }
         
         const newTurn: DebateTurnSnapshot = {
@@ -678,7 +676,7 @@ export const useDebateStore = create<DebateState>()(
         query,
         phase: 'idle',
         isDebating: true,
-        agents: createInitialAgents(),
+        agents: createInitialAgents(state.currentIndustry || undefined),
         tokensPerSecond: 0,
         totalTokens: 0,
         benchmarkReport: null,
