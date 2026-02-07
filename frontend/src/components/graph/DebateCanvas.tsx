@@ -26,6 +26,7 @@ import {
   type NodeTypes,
   type EdgeTypes,
   type OnSelectionChangeFunc,
+  type NodeMouseHandler,
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -470,6 +471,14 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
     }
   }, [onNodeSelect]);
 
+  const onNodeClick: NodeMouseHandler<RFNode> = useCallback((_event, node) => {
+    onNodeSelect?.(node.id);
+  }, [onNodeSelect]);
+
+  const onPaneClick = useCallback(() => {
+    onNodeSelect?.(null);
+  }, [onNodeSelect]);
+
   return (
     <div className="w-full h-full wafer-grid relative overflow-hidden">
       {/* Subtle wafer-scale glow/vignette (keeps the canvas from feeling flat) */}
@@ -484,6 +493,8 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
         nodes={nodes}
         edges={edges}
         onSelectionChange={onSelectionChange}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
         onMoveStart={handleMoveStart}
         onInit={handleInit}
         nodeTypes={nodeTypes}
