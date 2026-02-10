@@ -30,47 +30,8 @@ export function BackendWakePage() {
 
   useEffect(() => {
     if (!query) return;
-
-    let isMounted = true;
-    const controller = new AbortController();
-
-    warmBackend();
-
-    setTimedOut(false);
-    setStatus('Warming up the debate engine…');
-    setAttempt(0);
-
-    waitForBackend({
-      timeoutMs: 120_000,
-      intervalMs: 2_000,
-      signal: controller.signal,
-      onAttempt: (n) => {
-        if (!isMounted) return;
-        setAttempt(n);
-        setStatus(n < 3 ? 'Starting the debate engine…' : 'Still waking up…');
-      },
-    })
-      .then((ready) => {
-        if (!isMounted) return;
-        if (ready) {
-          setStatus('Backend ready. Launching debate…');
-          navigate(debateUrl);
-        } else {
-          setTimedOut(true);
-          setStatus('Backend is taking longer than usual.');
-        }
-      })
-      .catch(() => {
-        if (!isMounted) return;
-        setTimedOut(true);
-        setStatus('Backend is taking longer than usual.');
-      });
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [debateUrl, navigate, query, retryKey]);
+    navigate(debateUrl);
+  }, [debateUrl, navigate, query]);
 
   const handleRetry = () => {
     setRetryKey((prev) => prev + 1);
