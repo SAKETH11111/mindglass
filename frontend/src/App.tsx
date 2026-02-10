@@ -16,7 +16,6 @@ import { ApiKeyModal } from '@/components/ApiKeyModal'
 import { ApiKeyPrompt } from '@/components/ApiKeyPrompt'
 import { useApiKeyStore } from '@/hooks/useApiKeyStore'
 import { BackendWakePage } from '@/pages/BackendWake'
-import { warmBackend } from '@/lib/backend'
 
 // DiceBear Notionists avatar URLs for each agent (including industry-specific)
 const AGENT_AVATARS: Record<string, string> = {
@@ -97,9 +96,6 @@ function HomePage() {
     loadAllSessions()
   }, [loadAllSessions])
 
-  useEffect(() => {
-    warmBackend()
-  }, [])
 
   // Debate store reset function
   const resetDebate = useDebateStore((state) => state.resetDebate)
