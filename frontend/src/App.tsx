@@ -163,32 +163,6 @@ function HomePage() {
         {/* Subtle top line accent */}
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
-        <div className="px-6 py-3">
-          <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.75)]" />
-              <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-white/45">
-                Multi-perspective reasoning
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsHistoryOpen(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/15 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/45 transition-colors hover:border-white/20 hover:text-white/72"
-              >
-                <Clock className="h-3.5 w-3.5" />
-                <span>Recent sessions</span>
-                {sessionHistory.length > 0 && (
-                  <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] text-white/70">
-                    {sessionHistory.length > 99 ? '99+' : sessionHistory.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Bottom gradient fade */}
         <div className="h-12 bg-gradient-to-b from-black/20 to-transparent pointer-events-none" />
       </header>
