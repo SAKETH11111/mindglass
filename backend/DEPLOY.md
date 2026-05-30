@@ -34,7 +34,7 @@ fly auth login     # Or login if you have account
 cd backend
 
 # Launch (creates app, choose region like 'iad' for Virginia)
-fly launch --name mindglass-backend --region iad --no-deploy
+fly launch --name mindglass-prism-backend --region iad --no-deploy
 
 # Set secrets (your own API key and frontend URL)
 fly secrets set CEREBRAS_API_KEY=your_cerebras_api_key
@@ -53,7 +53,7 @@ fly open
 
 ```bash
 # Check health endpoint
-curl https://mindglass-backend.fly.dev/api/health
+curl https://mindglass-prism-backend.fly.dev/api/health
 
 # Should return: {"status": "ok", "timestamp": "..."}
 ```
@@ -61,8 +61,8 @@ curl https://mindglass-backend.fly.dev/api/health
 ### 5. Update Frontend
 
 1. Go to [vercel.com](https://vercel.com) → your project → Settings → Environment Variables
-2. Add: `VITE_WS_URL=wss://<your-backend-domain>/ws/debate`
-3. (Optional) Add: `VITE_API_URL=https://<your-backend-domain>` for health checks/wake-ups
+2. Add: `VITE_WS_URL=wss://mindglass-prism-backend.fly.dev/ws/debate`
+3. Add: `VITE_API_URL=https://mindglass-prism-backend.fly.dev` for health checks/wake-ups
 4. Redeploy frontend
 
 This is the key change that removes the need for Cloudflare Tunnel, ngrok, or keeping a laptop open.
