@@ -1,21 +1,19 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { Send, Clock, Settings } from 'lucide-react'
+import { Send, Clock } from 'lucide-react'
 import { AGENT_COLORS, AGENT_NAMES, getAgentIdsForIndustry, type AgentId } from './types/agent'
 import { DebatePage } from '@/pages/debate'
 import { HistorySidebar } from '@/components/HistorySidebar'
 import { AgentManagerWindow } from '@/components/AgentManagerWindow'
-import { ModelSelector, type ModelTier } from '@/components/ModelSelector'
+import { ModelSelector } from '@/components/ModelSelector'
 import { IndustrySelector, type IndustryType } from '@/components/IndustrySelector'
 import { RainbowMatrixShader } from '@/components/ui/rainbow-matrix-shader'
 import { DotMatrixText } from '@/components/DotMatrixText'
 import { useSessionStore } from '@/hooks/useSessionStore'
 import { useDebateStore } from '@/hooks/useDebateStore'
-import { SettingsPanel } from '@/components/SettingsPanel'
 import { ApiKeyModal } from '@/components/ApiKeyModal'
-import { ApiKeyPrompt } from '@/components/ApiKeyPrompt'
-import { useApiKeyStore } from '@/hooks/useApiKeyStore'
 import { BackendWakePage } from '@/pages/BackendWake'
+import { DEFAULT_MODEL_ID, type ModelTier } from '@/lib/models'
 
 // DiceBear Notionists avatar URLs for each agent (including industry-specific)
 const AGENT_AVATARS: Record<string, string> = {
@@ -53,21 +51,17 @@ interface PendingSubmission {
   model: ModelTier;
   agents: AgentId[];
   industry: IndustryType;
+  demo?: boolean;
 }
 
 function HomePage() {
   const [inputValue, setInputValue] = useState("")
   const [isFocused, setIsFocused] = useState(false)
-  const [selectedTier, setSelectedTier] = useState<ModelTier>('fast')
   const [selectedIndustry, setSelectedIndustry] = useState<IndustryType>('any')
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isAgentWindowOpen, setIsAgentWindowOpen] = useState(false)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [isApiPromptOpen, setIsApiPromptOpen] = useState(false)
-  const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null)
-  const agentAvatarsRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
-  const apiKey = useApiKeyStore((state) => state.apiKey)
+  const selectedTier: ModelTier = DEFAULT_MODEL_ID
 
   // Session management
   const {
@@ -91,6 +85,10 @@ function HomePage() {
     return getAgentIdsForIndustry(selectedIndustry)
   }, [selectedIndustry])
 
+  const activePerspectiveCount = useMemo(() => {
+    return selectedAgents.filter((agent) => visibleAgents.includes(agent)).length
+  }, [selectedAgents, visibleAgents])
+
   // Load sessions on mount
   useEffect(() => {
     loadAllSessions()
@@ -107,8 +105,9 @@ function HomePage() {
     const agentsParam = `&agents=${submission.agents.join(',')}`
     const industryParam = submission.industry !== 'any' ? `&industry=${submission.industry}` : ''
     const sessionParam = session ? `&session=${session.id}` : ''
+    const demoParam = submission.demo ? '&demo=1' : ''
 
-    navigate(`/loading?q=${encodeURIComponent(submission.query)}&model=${submission.model}${agentsParam}${industryParam}${sessionParam}`)
+    navigate(`/loading?q=${encodeURIComponent(submission.query)}&model=${submission.model}${agentsParam}${industryParam}${sessionParam}${demoParam}`)
   }, [createSession, navigate, resetDebate])
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
@@ -123,14 +122,8 @@ function HomePage() {
       industry: selectedIndustry,
     }
 
-    if (!apiKey) {
-      setPendingSubmission(submission)
-      setIsApiPromptOpen(true)
-      return
-    }
-
     startSubmission(submission)
-  }, [apiKey, inputValue, selectedAgents, selectedIndustry, selectedTier, startSubmission])
+  }, [inputValue, selectedAgents, selectedIndustry, selectedTier, startSubmission])
 
   const handleSelectSession = useCallback((sessionId: string) => {
     const session = loadSession(sessionId)
@@ -141,10 +134,9 @@ function HomePage() {
         : session.title;
       // Always include agents param to ensure correct selection
       const agentsParam = `&agents=${session.selectedAgents.join(',')}`
-      console.log('[App] Loading session:', sessionId, 'query:', query, 'agents:', session.selectedAgents);
       navigate(`/loading?q=${encodeURIComponent(query)}&model=${session.modelTier}${agentsParam}&session=${sessionId}`)
     } else {
-      console.error('[App] Failed to load session:', sessionId);
+      return
     }
   }, [loadSession, navigate])
 
@@ -156,24 +148,6 @@ function HomePage() {
     <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
       {/* Rainbow Matrix Shader Background */}
       <RainbowMatrixShader />
-
-      <ApiKeyPrompt
-        isOpen={isApiPromptOpen}
-        onContinue={() => {
-          setIsApiPromptOpen(false)
-          if (pendingSubmission) {
-            startSubmission(pendingSubmission)
-            setPendingSubmission(null)
-          }
-        }}
-        onSkip={() => {
-          setIsApiPromptOpen(false)
-          if (pendingSubmission) {
-            startSubmission(pendingSubmission)
-            setPendingSubmission(null)
-          }
-        }}
-      />
 
       {/* History Sidebar */}
       <HistorySidebar
@@ -190,29 +164,27 @@ function HomePage() {
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
         <div className="px-6 py-3">
-          <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-            {/* Left - Empty for balance */}
-            <div />
+          <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.75)]" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-white/45">
+                Multi-perspective reasoning
+              </span>
+            </div>
 
-            {/* Right - Settings + GitHub */}
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center justify-center w-7 h-7 text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-all duration-200"
-                title="Settings"
+                onClick={() => setIsHistoryOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/15 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/45 transition-colors hover:border-white/20 hover:text-white/72"
               >
-                <Settings className="w-4 h-4" />
+                <Clock className="h-3.5 w-3.5" />
+                <span>Recent sessions</span>
+                {sessionHistory.length > 0 && (
+                  <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] text-white/70">
+                    {sessionHistory.length > 99 ? '99+' : sessionHistory.length}
+                  </span>
+                )}
               </button>
-              <a
-                href="https://github.com/SAKETH11111/mindglass"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center w-7 h-7 text-white/30 hover:text-white/70 hover:bg-white/[0.05] transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-              </a>
             </div>
           </div>
         </div>
@@ -239,7 +211,7 @@ function HomePage() {
               />
             </div>
             <p className="text-sm max-w-lg mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150 text-white/40 font-mono">
-              Get instant, multi-angle analysis on any decision
+              Every angle of your decision, debated in real time
             </p>
           </div>
 
@@ -261,7 +233,7 @@ function HomePage() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
-                  placeholder="What decision do you need help with?"
+                  placeholder="What decision are you weighing?"
                   className="
                     flex-1 bg-transparent text-white outline-none text-base py-2
                     disabled:opacity-60
@@ -283,7 +255,6 @@ function HomePage() {
                   {/* Model Selector */}
                   <ModelSelector
                     selectedTier={selectedTier}
-                    onTierChange={setSelectedTier}
                   />
                 </div>
 
@@ -291,11 +262,10 @@ function HomePage() {
                 <div className="flex items-center gap-3 relative">
                   {/* Agent avatars - clickable to open window */}
                   <button
-                    ref={agentAvatarsRef}
                     type="button"
                     onClick={() => setIsAgentWindowOpen(true)}
                     className="flex items-center -space-x-0.5 hover:opacity-90 transition-opacity group"
-                    title="Manage consultants"
+                    title="Curate perspectives"
                   >
                     {visibleAgents.slice(0, 4).map((agent) => {
                       const avatar = AGENT_AVATARS[agent]
@@ -340,6 +310,15 @@ function HomePage() {
                     industry={selectedIndustry}
                   />
 
+                  <div className="hidden sm:flex items-center gap-2 px-2 py-1 border border-white/10 bg-white/5">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/35">
+                      Perspectives
+                    </span>
+                    <span className="font-mono text-[10px] text-white/75">
+                      {activePerspectiveCount}/{visibleAgents.length}
+                    </span>
+                  </div>
+
                   {/* Submit button */}
                   <button
                     type="submit"
@@ -368,7 +347,7 @@ function HomePage() {
               className="flex items-center gap-2 text-white/40 hover:text-white transition-colors font-mono text-xs uppercase tracking-wider"
             >
               <Clock className="w-3.5 h-3.5" />
-              <span>VIEW HISTORY</span>
+              <span>Recent sessions</span>
               {sessionHistory.length > 0 && (
                 <span className="w-5 h-5 bg-white/10 text-white/60 text-[10px] font-mono flex items-center justify-center">
                   {sessionHistory.length > 99 ? '99+' : sessionHistory.length}
@@ -380,15 +359,21 @@ function HomePage() {
           {/* Example prompts */}
           <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-700 delay-400 max-w-xl mx-auto">
             {[
-              "Is remote work better for productivity?",
-              "Should my startup focus on growth or profit?",
-              "Should I buy Tesla stock right now?",
-              "Is it time to hire or automate?",
+              "Should we raise prices or hold steady?",
+              "Is now the time to expand into a new market?",
+              "Should I take the offer or counter?",
+              "Build it in-house or buy off the shelf?",
             ].map((prompt) => (
               <button
                 key={prompt}
                 type="button"
-                onClick={() => setInputValue(prompt)}
+                onClick={() => startSubmission({
+                  query: prompt,
+                  model: selectedTier,
+                  agents: selectedAgents,
+                  industry: selectedIndustry,
+                  demo: true,
+                })}
                 className="text-left px-3 py-2.5 text-[11px] font-mono text-white/40 hover:text-white/70 transition-colors bg-[#111] border border-white/10 hover:border-white/30"
               >
                 {prompt}
@@ -398,13 +383,6 @@ function HomePage() {
 
         </div>
       </main>
-
-      {/* Settings Panel */}
-      <SettingsPanel
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-      />
-
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { AGENT_IDS } from '@/types/agent';
 import type { ConsultationSession, DebateTurn } from '@/types/session';
 import { createNewSession, createNewTurn, DEFAULT_SELECTED_AGENTS } from '@/types/session';
 import { saveSession, loadSessions, getSession, deleteSession } from '@/lib/sessionStorage';
+import { DEFAULT_MODEL_ID, type ModelTier } from '@/lib/models';
 
 interface SessionState {
   // Current session
@@ -22,7 +23,7 @@ interface SessionState {
   isAgentSelectorOpen: boolean;
   
   // Actions
-  createSession: (initialQuery?: string, selectedAgents?: AgentId[], modelTier?: 'fast' | 'pro') => ConsultationSession;
+  createSession: (initialQuery?: string, selectedAgents?: AgentId[], modelTier?: ModelTier) => ConsultationSession;
   loadSession: (sessionId: string) => ConsultationSession | null;
   loadAllSessions: () => void;
   deleteSessionById: (sessionId: string) => void;
@@ -61,7 +62,7 @@ export const useSessionStore = create<SessionState>()(
     isHistoryPanelOpen: false,
     isAgentSelectorOpen: false,
 
-    createSession: (initialQuery, selectedAgents, modelTier = 'pro') => {
+    createSession: (initialQuery, selectedAgents, modelTier = DEFAULT_MODEL_ID) => {
       const agents = selectedAgents || get().selectedAgents;
       const session = createNewSession(initialQuery, agents, modelTier);
       set({ 

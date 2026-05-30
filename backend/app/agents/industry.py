@@ -4,10 +4,8 @@ Creates specialized agents based on industry selection
 """
 
 from typing import Dict, Any, AsyncGenerator, Optional, Type
-from cerebras.cloud.sdk import Cerebras
-
 from app.agents.base import LLMAgent
-from app.config import settings
+from app.config import settings, build_cerebras_client
 
 
 def create_industry_agent_class(
@@ -27,21 +25,41 @@ def create_industry_agent_class(
                 name=name,
                 description=description,
                 prompt_file=prompt_file,
-                model="llama-3.3-70b"
+                model=settings.CEREBRAS_DEFAULT_MODEL
             )
             self.color = color
             resolved_key = api_key or settings.CEREBRAS_API_KEY
             if not resolved_key:
                 raise ValueError("CEREBRAS_API_KEY environment variable not set")
-            self.client = Cerebras(api_key=resolved_key)
+            self.client = build_cerebras_client(resolved_key)
 
-        async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
+        async def stream_response(
+            self,
+            query: str,
+            model_override: str = None,
+            use_reasoning: bool = False,
+            max_completion_tokens: int | None = None,
+        ) -> AsyncGenerator[Dict[str, Any], None]:
             """Stream a response using Cerebras API."""
             import asyncio
             import time
 
             self.set_status("processing")
             model_to_use = model_override or self.model
+            if model_to_use.startswith("openrouter/"):
+                try:
+                    async for message in self._stream_openrouter_response(
+                        query,
+                        model_to_use.removeprefix("openrouter/"),
+                        max_completion_tokens=max_completion_tokens,
+                    ):
+                        yield message
+                except Exception as e:
+                    yield self._create_token_message(f"[Error: {str(e)}]")
+                    yield self._create_done_message()
+                finally:
+                    self.set_status("idle")
+                return
             start_time = time.time()
             token_count = 0
 
@@ -54,7 +72,9 @@ def create_industry_agent_class(
                     ],
                     "stream": True
                 }
-                stream = self.client.chat.completions.create(**params)
+                if max_completion_tokens is not None:
+                    params["max_completion_tokens"] = max_completion_tokens
+                stream = self.client.with_options(max_retries=settings.CEREBRAS_STREAM_MAX_RETRIES).chat.completions.create(**params)
 
                 loop = asyncio.get_event_loop()
 

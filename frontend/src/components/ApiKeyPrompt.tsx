@@ -49,7 +49,7 @@ export function ApiKeyPrompt({ isOpen, onContinue, onSkip }: ApiKeyPromptProps) 
             <div>
               <h2 className="text-xl text-white font-semibold tracking-wide">WELCOME TO PRISM</h2>
               <p className="text-[12px] text-white/60 font-mono">
-                Multi-agent AI consulting powered by Cerebras
+                A panel of AI advisors, powered by Cerebras
               </p>
             </div>
           </div>
@@ -57,14 +57,11 @@ export function ApiKeyPrompt({ isOpen, onContinue, onSkip }: ApiKeyPromptProps) 
 
         <div className="px-7 pt-6 space-y-4">
           <p className="text-sm text-white/70 leading-relaxed">
-            PRISM uses the Cerebras API to run 8 expert AI agents simultaneously. Get your free API key to start debating.
+            PRISM works out of the box — no key required. Add your own Cerebras key only if you'd rather run on your own quota.
           </p>
 
           <div className="flex items-center gap-2 text-xs text-white/50 font-mono">
-            <span>Fast tier:</span>
-            <span className="text-white">Llama 3.1 8B</span>
-            <span className="text-white/30">|</span>
-            <span>Pro tier:</span>
+            <span>Default model:</span>
             <span className="text-white">GPT-OSS 120B</span>
           </div>
 
@@ -84,7 +81,7 @@ export function ApiKeyPrompt({ isOpen, onContinue, onSkip }: ApiKeyPromptProps) 
               className="flex items-center gap-2 text-xs text-[#F15A29] hover:text-[#F15A29]/80 transition-colors font-mono"
             >
               <ExternalLink className="w-3 h-3" />
-              Get your free API key from Cerebras Cloud
+              Get an API key from Cerebras Cloud
             </button>
           </div>
         </div>
@@ -108,7 +105,7 @@ export function ApiKeyPrompt({ isOpen, onContinue, onSkip }: ApiKeyPromptProps) 
           <p className="text-[10px] text-white/35 font-mono">
             Your API key is stored locally and sent only to run your sessions. It is not stored on our servers.
             <br />
-            You can add it later from the settings menu.
+            You can add or remove it later from settings.
           </p>
         </div>
       </div>

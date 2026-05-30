@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { Send, MessageSquarePlus, BarChart3, Clock } from 'lucide-react';
+import { Send, MessageSquarePlus, Clock } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, type BaseAgentId } from '@/types/agent';
-import { useDebateStore } from '@/hooks/useDebateStore';
+import { useDebateStore, type ConnectionState } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useSessionStore } from '@/hooks/useSessionStore';
 import { DotMatrixText } from '@/components/DotMatrixText';
 import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import type { ConsultationSession } from '@/types/session';
+import { normalizeModelParam } from '@/lib/models';
 
 // DiceBear Notionists avatar URL generator
 const getAvatarUrl = (agentId: AgentId) => {
@@ -18,11 +18,34 @@ const getAvatarUrl = (agentId: AgentId) => {
   return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=transparent`;
 };
 
-// Format tokens per second for display
-const formatTokPerSec = (tokensPerSecond: number): string => {
-  if (tokensPerSecond <= 0) return '--';
-  if (tokensPerSecond >= 1000) return `${(tokensPerSecond / 1000).toFixed(1)}k`;
-  return tokensPerSecond.toFixed(0);
+const getConnectionCopy = (connectionState: ConnectionState, error: string | null) => {
+  switch (connectionState) {
+    case 'connected':
+      return {
+        label: 'Live',
+        detail: 'Session updates are flowing normally.',
+        dotClassName: 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.45)]',
+      };
+    case 'connecting':
+      return {
+        label: 'Preparing',
+        detail: 'Opening the live channel and staging the first perspectives.',
+        dotClassName: 'bg-amber-400 animate-pulse shadow-[0_0_12px_rgba(251,191,36,0.4)]',
+      };
+    case 'error':
+      return {
+        label: 'Attention',
+        detail: error || 'The live channel hit an issue. Retry will pick the session back up.',
+        dotClassName: 'bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.4)]',
+      };
+    case 'disconnected':
+    default:
+      return {
+        label: 'Reconnecting',
+        detail: 'Holding your place while the session reconnects.',
+        dotClassName: 'bg-white/40 animate-pulse',
+      };
+  }
 };
 
 // Parse <think>...</think> tags from response
@@ -159,7 +182,7 @@ export function DebatePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q') || '';
-  const modelTier = searchParams.get('model') || 'pro'; // Default to 'pro' if not specified
+  const modelTier = normalizeModelParam(searchParams.get('model'));
   const agentsParam = searchParams.get('agents'); // Custom agent selection
   const sessionIdParam = searchParams.get('session'); // Session ID for resuming
 
@@ -168,8 +191,7 @@ export function DebatePage() {
     ? agentsParam.split(',').filter(a => AGENT_IDS.includes(a as BaseAgentId)) as BaseAgentId[]
     : null; // null means use session store's selection
 
-  // Design mode toggle (matches homepage)
-  const [designMode, setDesignMode] = useState<'boxy' | 'round'>('boxy');
+  const [designMode] = useState<'boxy' | 'round'>('boxy');
 
   // Inspector visibility state
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -179,9 +201,6 @@ export function DebatePage() {
   const [isInspectorExpanded, setIsInspectorExpanded] = useState(false);
   const hasAutoOpenedSynth = useRef(false);
 
-  // Top bar dialogs
-  const [isBenchOpen, setIsBenchOpen] = useState(false);
-  const [benchCopied, setBenchCopied] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Collapsible section state - for auto-open/close behavior
@@ -213,25 +232,11 @@ export function DebatePage() {
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
   const connectionState = useDebateStore((state) => state.connectionState);
-  const totalTokens = useDebateStore((state) => state.totalTokens);
+  const error = useDebateStore((state) => state.error);
   const resetDebate = useDebateStore((state) => state.resetDebate);
-  const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
-
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
-
-  const derivedBench = useMemo(() => {
-    if (!benchmarkReport) return null;
-    const agentBench = Object.values(benchmarkReport.agents || {});
-    let completionTokens = 0;
-    let completionTime = 0;
-    for (const a of agentBench) {
-      if (typeof a.completionTokens === 'number') completionTokens += a.completionTokens;
-      if (typeof a.completionTimeSec === 'number') completionTime += a.completionTimeSec;
-    }
-    const weightedTps = completionTime > 0 ? completionTokens / completionTime : null;
-    return { completionTokens, completionTime, weightedTps };
-  }, [benchmarkReport]);
+  const connectionCopy = useMemo(() => getConnectionCopy(connectionState, error), [connectionState, error]);
 
   // Follow-up conversation actions
   const saveCurrentTurn = useDebateStore((state) => state.saveCurrentTurn);
@@ -248,7 +253,7 @@ export function DebatePage() {
   // User constraint state from store
   const constraints = useDebateStore((state) => state.constraints);
 
-  // Track debate start time for tok/s calculation
+  // Track debate start time for session progress
   const debateStartTime = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -276,7 +281,6 @@ export function DebatePage() {
   // Initialize selected agents from URL param if provided
   useEffect(() => {
     if (agentsFromUrl && agentsFromUrl.length > 0) {
-      console.log('[DebatePage] Setting agents from URL:', agentsFromUrl);
       setSelectedAgents(agentsFromUrl);
     }
   }, []);
@@ -369,9 +373,6 @@ export function DebatePage() {
       
       // Start a new turn in the session
       startNewTurn(query);
-      
-      // Log the agents being sent
-      console.log('[DebatePage] Starting debate with agents:', selectedAgentsFromUrl);
       
       // Start the debate with context and agent selection
       startDebateSession(query, modelTier, previousContext, selectedAgentsFromUrl);
@@ -473,7 +474,6 @@ export function DebatePage() {
     
     // 6. Build context from previous turns and start the WebSocket debate
     const previousContext = getPreviousTurnsContext();
-    console.log('[DebatePage] Starting follow-up with context length:', previousContext.length);
     startDebateSession(newQuery, modelTier, previousContext, selectedAgentsFromUrl);
     
     // Mark that we've started so the main effect doesn't double-trigger
@@ -499,37 +499,29 @@ export function DebatePage() {
   // Handle constraint injection (PRD: Interrupt & Inject)
   const handleInjectConstraint = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[Inject] Handler called', { input: constraintInput, isReady, isInjecting, isDebating });
-
     if (!constraintInput.trim()) {
-      console.log('[Inject] Empty input, returning');
       return;
     }
 
     if (!isReady) {
-      console.log('[Inject] WebSocket not ready');
       return;
     }
 
     if (isInjecting) {
-      console.log('[Inject] Already injecting');
       return;
     }
 
     setIsInjecting(true);
     const constraint = constraintInput.trim();
-    console.log('[Inject] Processing constraint:', constraint);
 
     try {
       // Send to backend; UI updates on acknowledgment to avoid duplicates
-      console.log('[Inject] Sending to backend...');
-      const success = injectConstraint(constraint);
-      console.log('[Inject] Backend send result:', success);
+      injectConstraint(constraint);
 
       // Clear input
       setConstraintInput('');
     } catch (error) {
-      console.error('[Inject] Failed to inject constraint:', error);
+      void error;
     } finally {
       setIsInjecting(false);
     }
@@ -579,7 +571,7 @@ export function DebatePage() {
       ═══════════════════════════════════════════════════════════════ */}
       <header className="h-14 flex-shrink-0 border-b border-white/[0.06] bg-[#0a0a0a]">
         <div className="h-full px-5 flex items-center justify-between">
-          {/* Left: Logo + Design Toggle */}
+          {/* Left: Logo + Context */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/')}
@@ -596,208 +588,31 @@ export function DebatePage() {
                 inactiveColor="rgba(255,255,255,0.15)"
               />
             </button>
-            {/* Design Mode Toggle */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setDesignMode('boxy')}
-                className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all ${
-                  designMode === 'boxy'
-                    ? 'bg-white text-black'
-                    : 'bg-transparent text-white/50 border border-white/20 hover:text-white/70'
-                }`}
-              >
-                Boxy
-              </button>
-              <button
-                onClick={() => setDesignMode('round')}
-                className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all ${
-                  designMode === 'round'
-                    ? 'bg-white text-black rounded'
-                    : 'bg-transparent text-white/50 border border-white/20 hover:text-white/70 rounded'
-                }`}
-              >
-                Round
-              </button>
-            </div>
+            <span className="hidden sm:inline text-[10px] font-mono uppercase tracking-[0.24em] text-white/30">
+              Live Decision Support
+            </span>
           </div>
-          {/* Right: Actions + Cerebras Branding + Connection Status */}
+          {/* Right: Actions + Session Status */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <Dialog open={isBenchOpen} onOpenChange={setIsBenchOpen}>
-                <DialogTrigger asChild>
-                  <button
-                    disabled={!benchmarkReport}
-                    className={`
-                      flex items-center gap-2 transition-colors
-                      ${benchmarkReport ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
-                    `}
-                    title={benchmarkReport ? 'View benchmark report' : 'Benchmark available after the run completes'}
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">BENCH</span>
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-w-3xl bg-[#0a0a0a] border border-white/10 text-white">
-                  <DialogHeader>
-                    <div className="flex items-center justify-between gap-3">
-                      <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
-                        Benchmark Report
-                      </DialogTitle>
-                      <button
-                        type="button"
-                        disabled={!benchmarkReport}
-                        onClick={async () => {
-                          if (!benchmarkReport) return;
-                          try {
-                            await navigator.clipboard.writeText(JSON.stringify(benchmarkReport, null, 2));
-                            setBenchCopied(true);
-                            window.setTimeout(() => setBenchCopied(false), 1200);
-                          } catch {
-                            // Best-effort; clipboard might be blocked in some contexts.
-                          }
-                        }}
-                        className={`
-                          px-2 py-1 border text-[10px] font-mono uppercase tracking-wider transition-colors
-                          ${benchmarkReport ? 'border-white/15 text-white/60 hover:text-white hover:border-white/30' : 'border-white/10 text-white/20 cursor-not-allowed'}
-                        `}
-                        title={benchmarkReport ? 'Copy benchmark JSON' : 'Benchmark available after the run completes'}
-                      >
-                        {benchCopied ? 'COPIED' : 'COPY JSON'}
-                      </button>
-                    </div>
-                  </DialogHeader>
-                  <DialogDescription className="sr-only">
-                    Performance metrics for the completed debate run.
-                  </DialogDescription>
-
-                  {benchmarkReport ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-white/[0.03] border border-white/[0.06] p-3">
-                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">E2E</p>
-                          <p className="text-xl font-mono text-white/90">
-                            {(benchmarkReport.e2eMs / 1000).toFixed(2)}s
-                          </p>
-                        </div>
-                        <div className="bg-white/[0.03] border border-white/[0.06] p-3">
-                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">TTFT (first token)</p>
-                          <p className="text-xl font-mono text-white/90">
-                            {benchmarkReport.firstTokenMs !== null ? `${benchmarkReport.firstTokenMs}ms` : '--'}
-                          </p>
-                        </div>
-                        <div className="bg-white/[0.03] border border-white/[0.06] p-3">
-                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">Weighted TPS</p>
-                          <p className="text-xl font-mono text-[#F15A29]">
-                            {derivedBench?.weightedTps ? Math.round(derivedBench.weightedTps).toLocaleString() : '--'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white/[0.02] border border-white/[0.06] p-3">
-                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Rounds</p>
-                          <div className="space-y-1">
-                            {Object.entries(benchmarkReport.rounds || {})
-                              .sort(([a], [b]) => Number(a) - Number(b))
-                              .map(([roundNum, round]) => (
-                                <div key={roundNum} className="flex items-center justify-between text-xs font-mono">
-                                  <span className="text-white/70">
-                                    {roundNum}. {round.name}
-                                  </span>
-                                  <span className="text-white/50">{round.durationMs}ms</span>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                        <div className="bg-white/[0.02] border border-white/[0.06] p-3">
-                          <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Totals</p>
-                          <div className="space-y-1 text-xs font-mono text-white/70">
-                            <div className="flex items-center justify-between">
-                              <span>Completion tokens</span>
-                              <span className="text-white/50">
-                                {derivedBench?.completionTokens ? derivedBench.completionTokens.toLocaleString() : '--'}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span>Completion time</span>
-                              <span className="text-white/50">
-                                {derivedBench?.completionTime ? `${derivedBench.completionTime.toFixed(2)}s` : '--'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="bg-white/[0.02] border border-white/[0.06] p-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Agents</p>
-                        <div className="grid grid-cols-7 gap-2 text-[10px] font-mono uppercase tracking-wider text-white/40">
-                          <span>Agent</span>
-                          <span>Rnd</span>
-                          <span>Model</span>
-                          <span>TTFT</span>
-                          <span>ITL</span>
-                          <span>Tok</span>
-                          <span>TPS</span>
-                        </div>
-                        <div className="mt-2 space-y-1">
-                          {Object.entries(benchmarkReport.agents || {})
-                            .sort((a, b) => {
-                              const ar = a[1].round ?? 99;
-                              const br = b[1].round ?? 99;
-                              if (ar !== br) return ar - br;
-                              return a[0].localeCompare(b[0]);
-                            })
-                            .map(([agentId, a]) => (
-                              <div key={agentId} className="grid grid-cols-7 gap-2 text-xs font-mono text-white/70">
-                                <span className="text-white/90">{agentId}</span>
-                                <span className="text-white/50">{a.round}</span>
-                                <span className="text-white/50 truncate" title={a.model}>{a.model}</span>
-                                <span className="text-white/50">{a.ttftMs !== null ? `${a.ttftMs}ms` : '--'}</span>
-                                <span className="text-white/50">{a.avgItlMs !== null ? `${a.avgItlMs}ms` : '--'}</span>
-                                <span className="text-white/50">{typeof a.completionTokens === 'number' ? a.completionTokens.toLocaleString() : '--'}</span>
-                                <span className="text-[#F15A29]">{typeof a.tokensPerSecond === 'number' ? Math.round(a.tokensPerSecond).toLocaleString() : '--'}</span>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-white/50 font-mono">No benchmark report available.</p>
-                  )}
-                </DialogContent>
-              </Dialog>
-
               <button
                 onClick={() => setIsHistoryOpen(true)}
                 className="flex items-center gap-2 text-white/50 hover:text-white transition-colors"
               >
                 <Clock className="w-4 h-4" />
-                <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">HISTORY</span>
+                <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">Sessions</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-4">
-              {/* Cerebras Logo */}
-              <img
-                src="/cerebras-logo-white.png"
-                alt="Cerebras"
-                className="h-6 w-auto opacity-60"
-              />
-
-              {/* Connection Status */}
-              <div className="flex items-center gap-2">
-                <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} ${
-                  connectionState === 'connected' ? 'bg-emerald-500' :
-                  connectionState === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-                  connectionState === 'error' ? 'bg-red-500' :
-                  'bg-white/30'
-                }`} />
-                <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
-                  {connectionState === 'connected' ? (designMode === 'boxy' ? 'LIVE' : 'Live') :
-                   connectionState === 'connecting' ? (designMode === 'boxy' ? 'CONNECTING' : 'Connecting') :
-                   connectionState === 'error' ? (designMode === 'boxy' ? 'ERROR' : 'Error') :
-                   (designMode === 'boxy' ? 'OFFLINE' : 'Offline')}
-                </span>
+            <div className={`hidden md:flex items-center gap-3 px-3 py-2 border ${designMode === 'round' ? 'rounded-full' : ''} border-white/10 bg-white/[0.03]`}>
+              <div className={`w-2 h-2 ${designMode === 'round' ? 'rounded-full' : ''} ${connectionCopy.dotClassName}`} />
+              <div className="min-w-0">
+                <p className={`text-[10px] text-white/75 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : 'font-medium'}`}>
+                  {connectionCopy.label}
+                </p>
+                <p className="max-w-[220px] truncate text-[10px] text-white/35" title={connectionCopy.detail}>
+                  {connectionCopy.detail}
+                </p>
               </div>
             </div>
           </div>
@@ -827,14 +642,14 @@ export function DebatePage() {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              <span>{designMode === 'boxy' ? 'NEW CONSULTATION' : 'New Consultation'}</span>
+              <span>{designMode === 'boxy' ? 'NEW SESSION' : 'New Session'}</span>
             </button>
           </div>
 
           {/* Agent Roster */}
           <div className="flex-1 p-3 overflow-y-auto">
             <p className={`text-[10px] uppercase tracking-widest text-white/30 mb-3 px-2 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-              {designMode === 'boxy' ? 'YOUR CONSULTANTS' : 'Your Consultants'}
+              {designMode === 'boxy' ? 'PERSPECTIVES' : 'Perspectives'}
             </p>
             <div className="space-y-1">
               {AGENT_IDS.map((agentId) => {
@@ -842,10 +657,12 @@ export function DebatePage() {
                 const color = AGENT_COLORS[agentId];
                 const agent = agents[agentId];
                 const status = agent.isStreaming
-                  ? (designMode === 'boxy' ? 'STREAMING...' : 'Streaming...')
+                  ? (designMode === 'boxy' ? 'DRAFTING' : 'Drafting')
                   : agent.text
-                    ? (designMode === 'boxy' ? 'COMPLETE' : 'Complete')
-                    : (designMode === 'boxy' ? 'WAITING...' : 'Waiting...');
+                    ? (designMode === 'boxy' ? 'READY' : 'Ready')
+                    : connectionState === 'connecting'
+                      ? (designMode === 'boxy' ? 'QUEUED' : 'Queued')
+                      : (designMode === 'boxy' ? 'ON DECK' : 'On deck');
 
                 return (
                   <button
@@ -883,19 +700,6 @@ export function DebatePage() {
                       </p>
                     </div>
 
-                    {/* Token Rate Badge */}
-                    {agent.tokensPerSecond > 0 && (
-                      <div
-                        className={`text-[9px] px-1.5 py-0.5 font-mono ${designMode === 'round' ? 'rounded' : ''}`}
-                        style={{
-                          backgroundColor: `${color}20`,
-                          color: color
-                        }}
-                      >
-                        {formatTokPerSec(agent.tokensPerSecond)} tok/s
-                      </div>
-                    )}
-
                     {/* Active Indicator */}
                     {agent.isStreaming && (
                       <div
@@ -919,11 +723,11 @@ export function DebatePage() {
                   const completedCount = selectedAgentsFromUrl.filter(id => agents[id]?.text && !agents[id]?.isStreaming).length;
                   const totalAgents = selectedAgentsFromUrl.length;
                   if (streamingCount > 0) {
-                    return designMode === 'boxy' ? `${streamingCount} STREAMING` : `${streamingCount} streaming`;
+                    return designMode === 'boxy' ? `${streamingCount} ACTIVE` : `${streamingCount} active`;
                   } else if (completedCount > 0) {
-                    return designMode === 'boxy' ? `${completedCount}/${totalAgents} COMPLETE` : `${completedCount}/${totalAgents} complete`;
+                    return designMode === 'boxy' ? `${completedCount}/${totalAgents} READY` : `${completedCount}/${totalAgents} ready`;
                   }
-                  return designMode === 'boxy' ? `${totalAgents} AGENTS` : `${totalAgents} agents`;
+                  return designMode === 'boxy' ? `${totalAgents} PERSPECTIVES` : `${totalAgents} perspectives`;
                 })()}
               </span>
             </div>
@@ -971,7 +775,7 @@ export function DebatePage() {
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                    <span>{designMode === 'boxy' ? 'CONSULTANT INSIGHTS' : 'Consultant Insights'}</span>
+                    <span>{designMode === 'boxy' ? 'PERSPECTIVE NOTES' : 'Perspective Notes'}</span>
                     <span className="text-white/25">
                       ({completedCount}/{totalPerspectives})
                     </span>
@@ -1023,19 +827,6 @@ export function DebatePage() {
                               {AGENT_NAMES[agentId]}
                             </span>
 
-                            {/* Token Rate Badge */}
-                            {agent.tokensPerSecond > 0 && (
-                              <div
-                                className={`text-[9px] px-1.5 py-0.5 font-mono ${designMode === 'round' ? 'rounded' : ''}`}
-                                style={{
-                                  backgroundColor: `${color}20`,
-                                  color: color
-                                }}
-                              >
-                                {formatTokPerSec(agent.tokensPerSecond)} tok/s
-                              </div>
-                            )}
-
                             {agent.isStreaming && (
                               <div className={`w-1.5 h-1.5 ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
                             )}
@@ -1055,7 +846,7 @@ export function DebatePage() {
                             }
                           `}>
                             {/* Thinking section (collapsible) */}
-                            {thinking && (
+                            {thinking && isThinkingInProgress && (
                               <details className="group/think">
                                 <summary className={`
                                   flex items-center gap-1.5 cursor-pointer list-none text-[10px] text-white/30 hover:text-white/50
@@ -1125,36 +916,23 @@ export function DebatePage() {
                       </span>
                       <p className={`text-[11px] text-white/40 ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}>
                         {isLoading
-                          ? (designMode === 'boxy' ? 'CONSULTING YOUR TEAM...' : 'Consulting your team...')
+                          ? (designMode === 'boxy' ? 'REVIEWING LIVE PERSPECTIVES...' : 'Reviewing live perspectives...')
                           : isStreaming
-                            ? (designMode === 'boxy' ? 'PREPARING RECOMMENDATION...' : 'Preparing recommendation...')
+                            ? (designMode === 'boxy' ? 'COMPOSING FINAL RESPONSE...' : 'Composing final response...')
                             : hasAnswer
-                              ? (designMode === 'boxy' ? 'YOUR PERSONALIZED RECOMMENDATION' : 'Your personalized recommendation')
-                              : (designMode === 'boxy' ? 'WAITING...' : 'Waiting...')
+                              ? (designMode === 'boxy' ? 'FINAL RESPONSE READY' : 'Final response ready')
+                              : (designMode === 'boxy' ? 'READY TO SYNTHESIZE' : 'Ready to synthesize')
                         }
                       </p>
                     </div>
 
-                    {/* Token Rate Badge */}
-                    {agent.tokensPerSecond > 0 && (
-                      <div
-                        className={`ml-auto text-[10px] px-2 py-1 font-mono ${designMode === 'round' ? 'rounded' : ''}`}
-                        style={{
-                          backgroundColor: '#F15A2920',
-                          color: '#F15A29'
-                        }}
-                      >
-                        {formatTokPerSec(agent.tokensPerSecond)} tok/s
-                      </div>
-                    )}
-
-                    {isStreaming && !agent.tokensPerSecond && (
+                    {isStreaming && (
                       <div className={`w-2 h-2 ml-auto ${designMode === 'round' ? 'rounded-full' : ''} bg-emerald-500 animate-pulse`} />
                     )}
                   </div>
 
                   {/* Thinking section for synthesizer */}
-                  {thinking && (
+                  {thinking && isThinkingInProgress && (
                     <details className="group/think mb-4" open={isThinkingInProgress}>
                       <summary className={`
                         flex items-center gap-1.5 cursor-pointer list-none text-[10px] text-white/30 hover:text-white/50
@@ -1182,7 +960,7 @@ export function DebatePage() {
                   <div className={`text-[15px] leading-[1.8] ${hasAnswer ? 'text-white/80' : 'text-white/40'} ${designMode === 'boxy' ? 'font-mono text-[14px]' : ''}`}>
                     {hasAnswer
                       ? renderTextWithCitations(cleanAnswer, designMode, handleCitationClick)
-                      : (isLoading ? 'Analyzing your question from multiple angles...' : isThinkingInProgress ? '(thinking...)' : isStreaming ? '' : 'Waiting to synthesize...')
+                      : (isLoading ? 'Live perspective drafts are streaming above while the recommendation comes together.' : isThinkingInProgress ? '(thinking...)' : isStreaming ? '' : 'Final response will appear here once the first perspectives land.')
                     }
                     {isStreaming && cleanAnswer && <span className="animate-pulse">▊</span>}
                   </div>
@@ -1250,7 +1028,7 @@ export function DebatePage() {
                   type="text"
                   value={constraintInput}
                   onChange={(e) => setConstraintInput(e.target.value)}
-                  placeholder={designMode === 'boxy' ? 'ADD A CONSTRAINT...' : 'Add a constraint...'}
+                  placeholder={designMode === 'boxy' ? 'ADD GUIDANCE OR A NEW CONSTRAINT...' : 'Add guidance or a new constraint...'}
                   disabled={!isReady || isInjecting}
                   className={`flex-1 bg-transparent text-white outline-none text-sm py-2 disabled:opacity-60 ${
                     designMode === 'boxy'
@@ -1295,10 +1073,9 @@ export function DebatePage() {
               </div>
             </form>
 
-            {/* DEBUG: Hardcoded test to verify rendering */}
             {constraints.length > 0 && (
               <div className="mt-2 px-3 py-2 bg-white/5 border border-white/10 text-white/50 text-[10px] font-mono">
-                {constraints.length} constraint{constraints.length !== 1 ? 's' : ''} added
+                {constraints.length} update{constraints.length !== 1 ? 's' : ''} added to this session
               </div>
             )}
 
@@ -1309,7 +1086,7 @@ export function DebatePage() {
                   key={index}
                   className={`px-3 py-1.5 text-[11px] bg-[#888888]/30 text-white/80 border border-[#888888]/50 ${designMode === 'boxy' ? 'font-mono uppercase' : 'rounded'}`}
                 >
-                  <span className="text-[#888888] mr-1">Constraint:</span> {constraint}
+                  <span className="text-[#888888] mr-1">Guidance:</span> {constraint}
                 </div>
               ))}
             </div>
@@ -1353,7 +1130,7 @@ export function DebatePage() {
                 </div>
                 <p className={`mt-2 text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
                   {currentSession && currentSession.turns.length > 0 
-                    ? `${currentSession.turns.length} question${currentSession.turns.length !== 1 ? 's' : ''} in this consultation`
+                    ? `${currentSession.turns.length} question${currentSession.turns.length !== 1 ? 's' : ''} in this session`
                     : 'Your follow-up will build on the analysis above'
                   }
                 </p>
@@ -1442,7 +1219,7 @@ export function DebatePage() {
                   </ReactMarkdown>
                 ) : (
                   <div className="flex items-center justify-center h-full text-white/30 italic">
-                    Waiting for response...
+                    This perspective is standing by.
                   </div>
                 )}
               </div>
@@ -1452,7 +1229,7 @@ export function DebatePage() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════
-          BOTTOM BAR - Timeline + Cerebras Branding
+          BOTTOM BAR - Timeline + Session Readout
           Height: 48px fixed
       ═══════════════════════════════════════════════════════════════ */}
       <footer className={`h-12 flex-shrink-0 bg-[#0a0a0a] px-5 flex items-center justify-between ${designMode === 'boxy' ? 'border-t border-white/[0.08]' : 'border-t border-white/[0.06]'}`}>
@@ -1468,18 +1245,11 @@ export function DebatePage() {
           <span className={`text-[10px] text-white/25 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>0:12</span>
         </div>
 
-        {/* Cerebras Branding + Metrics */}
+        {/* Session Metrics */}
         <div className="flex items-center gap-4 ml-8">
-          {totalTokens > 0 && (
-            <span className={`text-[10px] text-white/40 tabular-nums ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-              {totalTokens} tokens
-            </span>
-          )}
-          <img
-            src="/cerebras-logo-white.png"
-            alt="Cerebras"
-            className="h-6 w-auto opacity-50"
-          />
+          <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
+            {connectionCopy.label}
+          </span>
         </div>
       </footer>
 

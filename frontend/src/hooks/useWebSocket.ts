@@ -2,10 +2,13 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDebateStore } from '@/hooks/useDebateStore';
 import { useApiKeyStore } from '@/hooks/useApiKeyStore';
 import { WS_URL } from '@/lib/backend';
+import { DEFAULT_MODEL_ID } from '@/lib/models';
 import type { WebSocketMessage } from '@/types';
 import type { Phase, AgentId } from '@/types/agent';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
+const CONNECTION_LOST_MESSAGE = 'Live session disconnected. Retry when you are ready to continue.';
+const CONNECTION_FAILED_MESSAGE = 'Unable to reach the live session. Check the connection and try again.';
 
 export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } = {}) {
   const ws = useRef<WebSocket | null>(null);
@@ -54,6 +57,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
         setConnectionState('connected');
         retryCount.current = 0;
         setIsReady(true);
+        setError(null);
         if (pendingMessagesRef.current.length > 0) {
           const queue = [...pendingMessagesRef.current];
           pendingMessagesRef.current = [];
@@ -79,7 +83,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
             connect();
           }, delay);
         } else {
-          setError('Connection lost. Click retry to reconnect.');
+          setError(CONNECTION_LOST_MESSAGE);
           // Show API key modal when connection fails after retries
           setShowApiKeyModal(true);
         }
@@ -89,6 +93,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
         if (isUnmountingRef.current) return;
         console.error('WebSocket error:', error);
         setConnectionState('error');
+        setError(CONNECTION_FAILED_MESSAGE);
         // Show API key modal on connection errors
         setShowApiKeyModal(true);
       };
@@ -274,7 +279,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       };
     } catch (err) {
       console.error('Failed to create WebSocket:', err);
-      setError('Failed to connect to server');
+      setError(CONNECTION_FAILED_MESSAGE);
     }
   }, [setConnectionState, appendToken, setAgentMetrics, setPhase, setAgentDone, setAgentError, endDebate, setError, setBenchmarkReport, addConstraint, addCheckpoint, setUserProxyNode, setShowApiKeyModal]);
 
@@ -319,10 +324,12 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
       return true;
     }
     pendingMessagesRef.current.push(message);
+    setConnectionState('connecting');
+    setIsReady(false);
     connect();
     console.warn('WebSocket not ready, queued message');
     return true;
-  }, [connect]);
+  }, [connect, setConnectionState]);
 
   // Manual retry function for when automatic retries are exhausted
   const retry = useCallback(() => {
@@ -340,7 +347,8 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     model?: string,
     previousContext?: string,
     selectedAgents?: AgentId[],
-    industry?: string
+    industry?: string,
+    demo?: boolean
   ) => {
     // Update local state first with industry for proper agent initialization
     startDebate(query, industry);
@@ -349,10 +357,11 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     return sendMessage({
       type: 'start_debate',
       query,
-      model: model || 'pro',
+      model: model || DEFAULT_MODEL_ID,
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
       industry: industry || '',
+      ...(demo ? { demo: true } : {}),
       ...(resolvedApiKey ? { apiKey: resolvedApiKey } : {}),
     });
   }, [sendMessage, startDebate, apiKey]);
@@ -371,7 +380,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     return sendMessage({ 
       type: 'start_debate', 
       query, 
-      model: model || 'pro',
+      model: model || DEFAULT_MODEL_ID,
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
       industry: industry || '',
@@ -397,7 +406,7 @@ export function useWebSocket({ autoConnect = false }: { autoConnect?: boolean } 
     return sendMessage({
       type: 'start_branching',
       query,
-      model: model || 'pro',
+      model: model || DEFAULT_MODEL_ID,
       previousContext: previousContext || '',
       selectedAgents: selectedAgents || null,
       industry: industry || '',

@@ -30,6 +30,9 @@ export function TimelineBar({
   const debateStartTime = useDebateStore((state) => state.debateStartTime);
   const globalTps = useDebateStore((state) => state.tokensPerSecond);
   const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
+  const phase = useDebateStore((state) => state.phase);
+  const isDebating = useDebateStore((state) => state.isDebating);
+  const agents = useDebateStore((state) => state.agents);
   const jumpToCheckpoint = useDebateStore((state) => state.jumpToCheckpoint);
 
   // Use prop TPS if available (from agent metrics), otherwise fall back to global simulated TPS
@@ -41,9 +44,30 @@ export function TimelineBar({
     ? checkpoints[checkpoints.length - 1].timestamp
     : 0;
   const maxDurationMs = Math.max(elapsedMs, lastCheckpointTime, 1);
+  const expectedDurationMs = benchmarkReport?.e2eMs ?? 18000;
+  const phaseFloor = (() => {
+    switch (phase) {
+      case 'Opening Arguments':
+        return 0.1;
+      case 'Challenge':
+        return 0.32;
+      case 'Defense & Rebuttal':
+        return 0.56;
+      case 'Expert Analysis':
+        return 0.78;
+      case 'Final Verdict':
+        return 0.92;
+      case 'complete':
+        return 1;
+      default:
+        return 0;
+    }
+  })();
 
   // Calculate progress percentage
-  const progress = Math.min((elapsedMs / maxDurationMs) * 100, 100);
+  const progress = isDebating
+    ? Math.min(Math.max(phaseFloor, elapsedMs / expectedDurationMs), 0.99) * 100
+    : Math.min((elapsedMs / maxDurationMs) * 100, 100);
 
   // Format time display
   const formatTime = (ms: number): string => {
@@ -68,6 +92,15 @@ export function TimelineBar({
   }, [checkpoints, debateStartTime, maxDurationMs]);
 
   const isTimeTraveling = activeCheckpointIndex !== null;
+  const activeAgents = Object.values(agents).filter((agent) => agent.isStreaming);
+  const answeredAgents = Object.values(agents).filter((agent) => agent.text.trim().length > 0).length;
+  const liveStatus = isDebating
+    ? (
+      answeredAgents === 0
+        ? `${phase === 'idle' ? 'Preparing session' : phase} • waiting for the first perspective`
+        : `${phase === 'idle' ? 'Streaming' : phase} • ${activeAgents.length || 1} perspective${activeAgents.length === 1 ? '' : 's'} active`
+    )
+    : null;
 
   // Get checkpoint color based on type
   const getCheckpointColor = (checkpoint: Checkpoint): string => {
@@ -86,13 +119,13 @@ export function TimelineBar({
       {isTimeTraveling && (
         <div className="h-8 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between px-4">
           <span className={`text-xs text-amber-400 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
-            ⏮ Viewing: {checkpoints[activeCheckpointIndex]?.label}
+            Viewing Snapshot: {checkpoints[activeCheckpointIndex]?.label}
           </span>
           <button
             onClick={exitTimeTravel}
             className={`text-xs text-amber-400 hover:text-amber-300 transition-colors ${designMode === 'boxy' ? 'font-mono uppercase' : ''}`}
           >
-            {designMode === 'boxy' ? 'RETURN TO LIVE →' : 'Return to live →'}
+            {designMode === 'boxy' ? 'RETURN TO LIVE' : 'Return to live'}
           </button>
         </div>
       )}
@@ -114,6 +147,14 @@ export function TimelineBar({
             className={`absolute left-0 h-1 bg-gradient-to-r from-[#F15A29]/80 to-[#F15A29]/40 transition-all duration-100 ${designMode === 'round' ? 'rounded-full' : ''}`}
             style={{ width: `${progress}%` }}
           />
+          {isDebating && (
+            <div
+              className={`absolute left-0 h-1 overflow-hidden ${designMode === 'round' ? 'rounded-full' : ''}`}
+              style={{ width: `${Math.max(progress, 8)}%` }}
+            >
+              <div className="h-full w-full animate-pulse bg-[linear-gradient(90deg,rgba(241,90,41,0.18)_0%,rgba(241,90,41,0.5)_50%,rgba(241,90,41,0.18)_100%)]" />
+            </div>
+          )}
 
           {/* Checkpoint dots */}
           {checkpointPositions.map((checkpoint) => (
@@ -165,7 +206,7 @@ export function TimelineBar({
 
         {/* Max time */}
         <span className={`text-xs text-white/40 tabular-nums w-10 ${designMode === 'boxy' ? 'font-mono' : ''}`}>
-          {formatTime(maxDurationMs)}
+          {formatTime(isDebating ? expectedDurationMs : maxDurationMs)}
         </span>
 
         {/* TPS Counter */}
@@ -174,57 +215,53 @@ export function TimelineBar({
             <TooltipTrigger asChild>
               <div className="flex items-center gap-2 px-2 py-1 bg-white/[0.03] border border-white/5 cursor-help">
                 <div className={`w-1.5 h-1.5 rounded-full ${currentTps > 0 ? 'bg-[#F15A29] animate-pulse' : 'bg-white/20'}`} />
+                <span className="text-[9px] text-white/35 font-mono uppercase tracking-wider hidden sm:inline">Rate</span>
                 <span className={`text-[10px] font-mono font-medium tabular-nums ${currentTps > 0 ? 'text-[#F15A29]' : 'text-white/30'}`}>
                   {currentTps > 0 ? `${Math.round(currentTps).toLocaleString()}` : '--'}
                 </span>
-                <span className="text-[9px] text-white/40 font-mono">t/s</span>
+                <span className="text-[9px] text-white/40 font-mono">tok/s</span>
               </div>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs bg-[#0a0a0a] border border-white/10 text-white">
               <p className="text-[11px] font-mono text-white/80">
-                Real throughput, aggregated across agents as they finish.
+                Live throughput aggregated across the active perspectives.
               </p>
               <p className="text-[10px] font-mono text-white/50 mt-1">
-                Computed from Cerebras usage: completion tokens / completion time.
-              </p>
-              <p className="text-[10px] font-mono text-white/50 mt-1">
-                Open <span className="text-white/70">BENCH</span> for TTFT, ITL, and per-agent breakdown.
+                Detailed timing moves into run details after the session completes.
               </p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-
-        {/* Cerebras Branding */}
-        <img
-          src="/cerebras-logo-white.png"
-          alt="Cerebras"
-          className="h-5 w-auto opacity-50"
-        />
       </div>
 
-      {/* Cerebras Benchmark Summary (factual, no synthetic GPU baseline) */}
+      {/* Run Summary */}
       <div className={`h-8 px-6 flex items-center justify-between border-t ${designMode === 'boxy' ? 'border-white/5' : 'border-white/[0.03]'}`}>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          {liveStatus && (
+            <span className="truncate text-[10px] font-mono text-[#F15A29]/80">
+              {liveStatus}
+            </span>
+          )}
           {checkpoints.length > 0 && (
             <span className={`text-[10px] text-white/30 ${designMode === 'boxy' ? 'font-mono uppercase tracking-wider' : ''}`}>
-              {checkpoints.length} {designMode === 'boxy' ? 'CHECKPOINTS' : 'checkpoints'}
+              {checkpoints.length} {designMode === 'boxy' ? 'SNAPSHOTS' : 'snapshots'}
             </span>
           )}
         </div>
 
         {benchmarkReport ? (
           <div className="flex items-center gap-2 text-[10px] font-mono">
-            <span className="text-white/35">E2E</span>
+            <span className="text-white/35">End to End</span>
             <span className="text-white/70">{(benchmarkReport.e2eMs / 1000).toFixed(2)}s</span>
             <span className="text-white/20">•</span>
-            <span className="text-white/35">TTFT</span>
+            <span className="text-white/35">First Response</span>
             <span className="text-white/70">
               {benchmarkReport.firstTokenMs !== null ? `${benchmarkReport.firstTokenMs}ms` : '--'}
             </span>
           </div>
         ) : (
           <div className="text-[10px] font-mono text-white/30">
-            Benchmark appears when the run completes.
+            {isDebating ? 'Live progress is estimated until the first checkpoints land.' : 'Run details appear once the session settles.'}
           </div>
         )}
       </div>

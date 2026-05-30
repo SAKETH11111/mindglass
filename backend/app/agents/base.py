@@ -2,6 +2,10 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, AsyncGenerator
 from datetime import datetime
 import os
+import json
+import time
+
+import httpx
 
 
 class BaseAgent(ABC):
@@ -105,7 +109,13 @@ class BaseAgent(ABC):
         self.status = status
 
     @abstractmethod
-    async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
+    async def stream_response(
+        self,
+        query: str,
+        model_override: str = None,
+        use_reasoning: bool = False,
+        max_completion_tokens: int | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a response to the given query.
 
@@ -113,6 +123,7 @@ class BaseAgent(ABC):
             query: The user's query or message
             model_override: Optional model ID to use instead of the default
             use_reasoning: Whether to enable reasoning_effort for deeper analysis
+            max_completion_tokens: Optional cap for latency-sensitive responses
 
         Yields:
             Dict containing agent_token messages with:
@@ -170,3 +181,111 @@ class LLMAgent(BaseAgent):
     def clear_history(self) -> None:
         """Clear conversation history."""
         self.conversation_history = []
+
+    async def _stream_openrouter_response(
+        self,
+        query: str,
+        model: str,
+        max_completion_tokens: int | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream an OpenRouter completion using its OpenAI-compatible SSE API."""
+        from app.config import settings
+
+        if not settings.OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY environment variable not set")
+
+        start_time = time.time()
+        token_count = 0
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": query},
+            ],
+            "stream": True,
+        }
+        requested_max_tokens = max_completion_tokens or settings.OPENROUTER_MIN_MAX_TOKENS
+        payload["max_tokens"] = max(requested_max_tokens, settings.OPENROUTER_MIN_MAX_TOKENS)
+        if settings.OPENROUTER_PROVIDER_SORT:
+            payload["provider"] = {
+                "sort": settings.OPENROUTER_PROVIDER_SORT,
+            }
+
+        headers = {
+            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": settings.OPENROUTER_HTTP_REFERER,
+            "X-OpenRouter-Title": settings.OPENROUTER_APP_TITLE,
+        }
+
+        timeout = httpx.Timeout(
+            settings.CEREBRAS_TIMEOUT_SECONDS,
+            connect=settings.CEREBRAS_CONNECT_TIMEOUT_SECONDS,
+            read=settings.CEREBRAS_READ_TIMEOUT_SECONDS,
+            write=settings.CEREBRAS_WRITE_TIMEOUT_SECONDS,
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{settings.OPENROUTER_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                reasoning_open = False
+
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+
+                    chunk = json.loads(data)
+                    choice = (chunk.get("choices") or [{}])[0]
+                    delta = choice.get("delta") or {}
+                    reasoning = delta.get("reasoning")
+                    if isinstance(reasoning, str) and reasoning:
+                        if not reasoning_open:
+                            token_count += 1
+                            yield self._create_token_message("<think>")
+                            reasoning_open = True
+                        token_count += 1
+                        yield self._create_token_message(reasoning)
+
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        if reasoning_open:
+                            token_count += 1
+                            yield self._create_token_message("</think>")
+                            reasoning_open = False
+                        token_count += 1
+                        yield self._create_token_message(content)
+
+                    usage = chunk.get("usage") or {}
+                    prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                    completion_tokens = usage.get("completion_tokens", completion_tokens)
+                    total_tokens = usage.get("total_tokens", total_tokens)
+
+                if reasoning_open:
+                    token_count += 1
+                    yield self._create_token_message("</think>")
+
+        elapsed = time.time() - start_time
+        effective_completion_tokens = completion_tokens or token_count
+        tokens_per_second = effective_completion_tokens / elapsed if elapsed > 0 else 0
+
+        yield self._create_metrics_message(
+            tokens_per_second=tokens_per_second,
+            total_tokens=total_tokens or effective_completion_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=effective_completion_tokens,
+            completion_time=elapsed,
+        )
+        yield self._create_done_message()

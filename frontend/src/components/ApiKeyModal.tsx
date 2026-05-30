@@ -50,17 +50,17 @@ export function ApiKeyModal() {
           </div>
           <div>
             <h2 className="text-lg font-bold text-white font-mono tracking-wider">
-              CONNECTION ISSUE
+              PERSONAL KEY OPTIONAL
             </h2>
             <p className="text-xs text-white/50 font-mono">
-              We're having trouble connecting to Cerebras
+              Use your own quota if the hosted session is unavailable
             </p>
           </div>
         </div>
 
         {/* Description */}
         <p className="text-sm text-white/70 mb-3 leading-relaxed">
-          Our shared API key may be experiencing rate limits. You can use your own Cerebras API key to continue without interruptions.
+          PRISM usually runs on the hosted deployment. If that path is busy or unavailable, you can temporarily continue with your own Cerebras key here.
         </p>
 
         {error && (
@@ -100,7 +100,7 @@ export function ApiKeyModal() {
             onClick={handleClose}
             className="flex-1 px-4 py-3 border border-white/20 text-white/70 font-mono text-xs uppercase tracking-wider hover:bg-white/5 transition-colors"
           >
-            Cancel
+            Not now
           </button>
           <button
             onClick={handleSave}
@@ -111,7 +111,7 @@ export function ApiKeyModal() {
                 : 'bg-[#F15A29] text-white hover:bg-[#F15A29]/90'
             }`}
           >
-            {isSaved ? 'Saved!' : 'Use My API Key'}
+            {isSaved ? 'Saved!' : 'Continue with My Key'}
           </button>
         </div>
 

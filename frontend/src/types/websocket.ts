@@ -10,6 +10,7 @@ export interface StartDebateMessage {
   selectedAgents?: AgentId[] | null;
   industry?: string;
   apiKey?: string;
+  demo?: boolean;
 }
 
 export interface StartBranchingMessage {

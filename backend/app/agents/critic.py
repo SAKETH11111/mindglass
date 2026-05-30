@@ -4,10 +4,8 @@ Streams responses using Cerebras API
 """
 
 from typing import Dict, Any, AsyncGenerator
-from cerebras.cloud.sdk import Cerebras
-
 from app.agents.base import LLMAgent
-from app.config import settings
+from app.config import settings, build_cerebras_client
 
 
 class CriticAgent(LLMAgent):
@@ -22,15 +20,21 @@ class CriticAgent(LLMAgent):
             name="Critic",
             description="Challenges assumptions, questions logic, and plays devil's advocate",
             prompt_file="critic.txt",
-            model="llama-3.3-70b"
+            model=settings.CEREBRAS_DEFAULT_MODEL
         )
         self.color = "#EF4444"
         resolved_key = api_key or settings.CEREBRAS_API_KEY
         if not resolved_key:
             raise ValueError("CEREBRAS_API_KEY environment variable not set")
-        self.client = Cerebras(api_key=resolved_key)
+        self.client = build_cerebras_client(resolved_key)
 
-    async def stream_response(self, query: str, model_override: str = None, use_reasoning: bool = False) -> AsyncGenerator[Dict[str, Any], None]:
+    async def stream_response(
+        self,
+        query: str,
+        model_override: str = None,
+        use_reasoning: bool = False,
+        max_completion_tokens: int | None = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a response to the given query using Cerebras API.
         """
@@ -39,6 +43,20 @@ class CriticAgent(LLMAgent):
 
         self.set_status("processing")
         model_to_use = model_override or self.model
+        if model_to_use.startswith("openrouter/"):
+            try:
+                async for message in self._stream_openrouter_response(
+                    query,
+                    model_to_use.removeprefix("openrouter/"),
+                    max_completion_tokens=max_completion_tokens,
+                ):
+                    yield message
+            except Exception as e:
+                yield self._create_token_message(f"[Error: {str(e)}]")
+                yield self._create_done_message()
+            finally:
+                self.set_status("idle")
+            return
         start_time = time.time()
         token_count = 0
 
@@ -51,7 +69,9 @@ class CriticAgent(LLMAgent):
                 ],
                 "stream": True
             }
-            stream = self.client.chat.completions.create(**params)
+            if max_completion_tokens is not None:
+                params["max_completion_tokens"] = max_completion_tokens
+            stream = self.client.with_options(max_retries=settings.CEREBRAS_STREAM_MAX_RETRIES).chat.completions.create(**params)
 
             loop = asyncio.get_event_loop()
             def get_next_chunk(iterator):

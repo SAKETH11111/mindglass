@@ -100,7 +100,7 @@ export function AgentManagerWindow({ isOpen, onClose, industry = 'any' }: AgentM
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-white/60" />
             <span className="font-mono text-xs text-white/80 uppercase tracking-wider">
-              CONSULTANT PANEL
+              PERSPECTIVE PANEL
             </span>
           </div>
           
@@ -186,7 +186,7 @@ export function AgentManagerWindow({ isOpen, onClose, industry = 'any' }: AgentM
         {/* Footer */}
         <div className="px-4 py-3 border-t border-white/10 bg-[#0d0d0d]">
           <p className="text-center text-white/30 font-mono text-[10px]">
-            Select consultants to include in your analysis
+            Curate the voices you want in the room
           </p>
         </div>
       </div>

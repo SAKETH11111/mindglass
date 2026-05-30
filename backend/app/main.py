@@ -14,6 +14,7 @@ import os
 from dotenv import load_dotenv
 
 from app.orchestrator.debate import DebateOrchestrator
+from app.orchestrator.demo import stream_demo_debate
 from app.websocket.messages import create_error
 from app.config import settings
 from app.agents.industry import get_industry_agent_info, INDUSTRY_AGENTS
@@ -166,6 +167,25 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:
                 pass
 
+    async def run_demo_stream(
+        query: str,
+        selected_agents: list = None,
+    ):
+        try:
+            print(f"[{datetime.now().isoformat()}] Demo stream start id={stream_id}")
+            async for token in stream_demo_debate(query, selected_agents):
+                await safe_send(token)
+            print(f"[{datetime.now().isoformat()}] Demo debate complete")
+        except asyncio.CancelledError:
+            print(f"[{datetime.now().isoformat()}] Demo stream cancelled")
+        except Exception as e:
+            error_msg = f"Error during demo streaming: {str(e)}"
+            print(f"[{datetime.now().isoformat()}] {error_msg}")
+            try:
+                await safe_send(create_error(error_msg))
+            except Exception:
+                pass
+
 
     try:
         while True:
@@ -180,11 +200,12 @@ async def websocket_endpoint(websocket: WebSocket):
             # Handle start_debate message
             if message.get("type") == "start_debate":
                 query = message.get("query", "").strip()
-                model = message.get("model", "pro")  # Default to 'pro' tier
+                model = message.get("model", settings.CEREBRAS_DEFAULT_MODEL)
                 previous_context = message.get("previousContext", "")  # Context from previous turns
                 selected_agents = message.get("selectedAgents", None)  # Which agents to include
                 industry = message.get("industry", "")  # Industry context for tailored advice
                 api_key = (message.get("apiKey") or "").strip() or None
+                demo_mode = bool(message.get("demo"))
 
                 if api_key and not is_valid_api_key(api_key):
                     await safe_send(
@@ -192,7 +213,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
                     continue
 
-                if not api_key and not settings.CEREBRAS_API_KEY:
+                if not demo_mode and not api_key and not settings.CEREBRAS_API_KEY:
                     await safe_send(
                         create_error("Server is missing CEREBRAS_API_KEY. Provide your own API key in settings.")
                     )
@@ -203,7 +224,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     await safe_send(create_error("Query cannot be empty"))
                     continue
 
-                print(f"[{datetime.now().isoformat()}] Starting debate - Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'} | Industry: {industry or 'generic'}")
+                print(
+                    f"[{datetime.now().isoformat()}] Starting debate - "
+                    f"Query: {query[:50]}... | Model: {model} | Agents: {selected_agents or 'all'} | "
+                    f"Industry: {industry or 'generic'} | Demo: {demo_mode}"
+                )
                 if previous_context:
                     print(f"[{datetime.now().isoformat()}] Previous context length: {len(previous_context)} chars")
 
@@ -215,13 +240,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Start streaming in the background so we can handle injects
                 stream_id = str(uuid.uuid4())
-                stream_task = asyncio.create_task(
-                    run_stream(query, model, previous_context, selected_agents, industry, api_key)
-                )
+                if demo_mode:
+                    stream_task = asyncio.create_task(run_demo_stream(query, selected_agents))
+                else:
+                    stream_task = asyncio.create_task(
+                        run_stream(query, model, previous_context, selected_agents, industry, api_key)
+                    )
 
             elif message.get("type") == "start_branching":
                 query = message.get("query", "").strip()
-                model = message.get("model", "pro")
+                model = message.get("model", settings.CEREBRAS_DEFAULT_MODEL)
                 previous_context = message.get("previousContext", "")
                 selected_agents = message.get("selectedAgents", None)
                 industry = message.get("industry", "")

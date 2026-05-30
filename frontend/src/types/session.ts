@@ -1,4 +1,5 @@
 import type { AgentId } from './agent';
+import { DEFAULT_MODEL_ID, type ModelTier } from '@/lib/models';
 
 /**
  * Represents a single debate turn (question + agent responses)
@@ -56,7 +57,7 @@ export interface ConsultationSession {
   updatedAt: number;
   turns: DebateTurn[];
   selectedAgents: AgentId[];
-  modelTier: 'fast' | 'pro';
+  modelTier: ModelTier;
 }
 
 /**
@@ -80,7 +81,7 @@ export const DEFAULT_SELECTED_AGENTS: AgentId[] = [
 ];
 
 // Helper to create a new session
-export function createNewSession(initialQuery?: string, selectedAgents?: AgentId[], modelTier: 'fast' | 'pro' = 'pro'): ConsultationSession {
+export function createNewSession(initialQuery?: string, selectedAgents?: AgentId[], modelTier: ModelTier = DEFAULT_MODEL_ID): ConsultationSession {
   const now = Date.now();
   const session: ConsultationSession = {
     id: `session-${now}-${Math.random().toString(36).substring(2, 9)}`,

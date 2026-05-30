@@ -1,8 +1,12 @@
 # MindGlass Backend Deployment
 
+## Goal
+
+Run the backend on an always-on host so the frontend never depends on a laptop tunnel or a local machine staying awake.
+
 ## Recommended: Fly.io (~$2-5/month)
 
-Cheapest option that stays running 24/7 with full WebSocket support.
+Cheapest option here that stays reachable 24/7 with full WebSocket support.
 
 ### 1. Install Fly CLI
 
@@ -32,8 +36,9 @@ cd backend
 # Launch (creates app, choose region like 'iad' for Virginia)
 fly launch --name mindglass-backend --region iad --no-deploy
 
-# Set secrets (your API key and frontend URL)
-fly secrets set CEREBRAS_API_KEY=csk-9224pjn34462jkm2vwvj94erkvm832rj84vd5j4dh9j63fth
+# Set secrets (your own API key and frontend URL)
+fly secrets set CEREBRAS_API_KEY=your_cerebras_api_key
+fly secrets set OPENROUTER_API_KEY=your_openrouter_api_key
 fly secrets set FRONTEND_URL=https://frontend-nine-iota-86.vercel.app
 fly secrets set DEBUG=false
 
@@ -60,6 +65,8 @@ curl https://mindglass-backend.fly.dev/api/health
 3. (Optional) Add: `VITE_API_URL=https://<your-backend-domain>` for health checks/wake-ups
 4. Redeploy frontend
 
+This is the key change that removes the need for Cloudflare Tunnel, ngrok, or keeping a laptop open.
+
 ### Fly.io Config Files (Already Created)
 
 - `fly.toml` - App configuration
@@ -67,6 +74,24 @@ curl https://mindglass-backend.fly.dev/api/health
 - `.dockerignore` - Exclude files from build
 
 ---
+
+## Alternative: Railway
+
+1. Create a Railway service rooted at `backend/`
+2. Start command:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --ws websockets
+```
+
+3. Add env vars:
+   - `CEREBRAS_API_KEY`
+   - `OPENROUTER_API_KEY` (optional fallback)
+   - `FRONTEND_URL`
+   - `DEBUG=false`
+4. Point the Vercel frontend at the Railway backend with:
+   - `VITE_WS_URL=wss://<your-backend-domain>/ws/debate`
+   - `VITE_API_URL=https://<your-backend-domain>`
 
 ## Alternative: Render ($7/month)
 
@@ -81,6 +106,7 @@ If Fly.io doesn't work for you:
    - **Plan:** Standard ($7/month) for always-on WebSockets
 5. Env vars:
    - `CEREBRAS_API_KEY` = your key
+   - `OPENROUTER_API_KEY` = optional fallback key
    - `FRONTEND_URL` = https://prism-cerebras.vercel.app
 
 ---
@@ -108,3 +134,7 @@ Scale up: `fly scale memory 1024`
 ### API key not working
 - Verify key is set: `fly secrets list`
 - Check logs for errors: `fly logs`
+
+### Preset demos should not use model quota
+- Homepage presets pass `demo=1` and stream a scripted debate from the backend.
+- Custom prompts still use the live model path with Cerebras first and OpenRouter fallback when configured.

@@ -10,7 +10,7 @@
  * │  Agent   │      semantic edges)                  │  (on select)  │
  * │ Roster   │                                       │               │
  * ├──────────┴───────────────────────────────────────┴───────────────┤
- * │  BOTTOM BAR - Timeline, Interrupt Input, Cerebras Branding      │
+ * │  BOTTOM BAR - Timeline, Interrupt Input, Session Readout        │
  * └──────────────────────────────────────────────────────────────────┘
  */
 
@@ -19,7 +19,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { BarChart3, Clock } from 'lucide-react';
 import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, getAgentIdsForIndustry } from '@/types/agent';
-import { useDebateStore } from '@/hooks/useDebateStore';
+import { useDebateStore, type ConnectionState } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { DebateCanvas } from '@/components/graph';
 import { TimelineBar } from '@/components/TimelineBar';
@@ -28,6 +28,7 @@ import { SessionHistoryPanel } from '@/components/SessionHistoryPanel';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import type { ConsultationSession } from '@/types/session';
 import canvasBg from '@/assets/canvas_orb.png';
+import { normalizeModelParam } from '@/lib/models';
 
 // DiceBear avatar
 const getAvatarUrl = (agentId: string) => {
@@ -63,14 +64,45 @@ const areAgentListsEqual = (a: AgentId[], b: AgentId[]): boolean => {
   return true;
 };
 
+const getConnectionCopy = (connectionState: ConnectionState, error: string | null) => {
+  switch (connectionState) {
+    case 'connected':
+      return {
+        label: 'Live',
+        detail: 'Session updates are flowing normally.',
+        dotClassName: 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.45)]',
+      };
+    case 'connecting':
+      return {
+        label: 'Preparing',
+        detail: 'Opening the live channel and staging the first perspectives.',
+        dotClassName: 'bg-amber-400 animate-pulse shadow-[0_0_12px_rgba(251,191,36,0.4)]',
+      };
+    case 'error':
+      return {
+        label: 'Attention',
+        detail: error || 'The live channel hit an issue. Retry will pick the session back up.',
+        dotClassName: 'bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.4)]',
+      };
+    case 'disconnected':
+    default:
+      return {
+        label: 'Reconnecting',
+        detail: 'Holding your place while the session reconnects.',
+        dotClassName: 'bg-white/40 animate-pulse',
+      };
+  }
+};
+
 export function DebatePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const query = searchParams.get('q') || '';
-  const modelTier = searchParams.get('model') || 'pro';
+  const modelTier = normalizeModelParam(searchParams.get('model'));
   const agentsParam = searchParams.get('agents');
   const sessionIdParam = searchParams.get('session');
   const industryParam = searchParams.get('industry') || '';
+  const isDemoMode = searchParams.get('demo') === '1';
 
   // State
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -103,14 +135,18 @@ export function DebatePage() {
   const agents = useDebateStore((state) => state.agents);
   const phase = useDebateStore((state) => state.phase);
   const isDebating = useDebateStore((state) => state.isDebating);
+  const connectionState = useDebateStore((state) => state.connectionState);
+  const error = useDebateStore((state) => state.error);
   const tokensPerSecond = useDebateStore((state) => state.tokensPerSecond);
   const totalTokens = useDebateStore((state) => state.totalTokens);
   const checkpoints = useDebateStore((state) => state.checkpoints);
   const resetDebate = useDebateStore((state) => state.resetDebate);
   const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
+  const storeDebateStartTime = useDebateStore((state) => state.debateStartTime);
 
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
+  const connectionCopy = useMemo(() => getConnectionCopy(connectionState, error), [connectionState, error]);
 
   const derivedBench = useMemo(() => {
     if (!benchmarkReport) return null;
@@ -269,7 +305,6 @@ export function DebatePage() {
   const [constraintInput, setConstraintInput] = useState('');
 
   // Timing
-  const debateStartTime = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
   // Keep session-store selection synchronized with URL/industry-derived selection
@@ -331,13 +366,12 @@ export function DebatePage() {
     if (hasHydratedSessionRef.current) return;
     if (query && !isDebating && phase === 'idle' && !hasStartedRef.current) {
       hasStartedRef.current = true;
-      debateStartTime.current = Date.now();
 
       const previousContext = getPreviousTurnsContext();
       startNewTurn(query);
-      startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam);
+      startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam, isDemoMode);
     }
-  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, industryParam]);
+  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, industryParam, isDemoMode]);
 
   // Mark turn complete when debate ends
   useEffect(() => {
@@ -378,12 +412,13 @@ export function DebatePage() {
 
   // Update elapsed time
   useEffect(() => {
-    if (!isDebating || !debateStartTime.current) return;
+    if (!isDebating || !storeDebateStartTime) return;
+    setElapsedMs(Math.max(0, Date.now() - storeDebateStartTime));
     const interval = setInterval(() => {
-      setElapsedMs(Date.now() - (debateStartTime.current || Date.now()));
+      setElapsedMs(Math.max(0, Date.now() - storeDebateStartTime));
     }, 100);
     return () => clearInterval(interval);
-  }, [isDebating]);
+  }, [isDebating, storeDebateStartTime]);
 
   // NOTE: Aggregate TPS is derived from real agent metrics in the store
   // const currentTps = useMemo(() => {
@@ -436,7 +471,6 @@ export function DebatePage() {
     
     // 4. Mark that we've started so the main effect doesn't double-trigger
     hasStartedRef.current = true;
-    debateStartTime.current = Date.now();
     
     // 5. Start a new turn in the session store
     startNewTurn(newQuery);
@@ -510,7 +544,7 @@ export function DebatePage() {
             </p>
           </div>
 
-          {/* Right: Bench + History */}
+          {/* Right: Details + History + Status */}
           <div className="flex items-center gap-3">
             <Dialog open={isBenchOpen} onOpenChange={setIsBenchOpen}>
               <DialogTrigger asChild>
@@ -520,17 +554,17 @@ export function DebatePage() {
                     flex items-center gap-2 transition-colors
                     ${benchmarkReport ? 'text-white/50 hover:text-white' : 'text-white/20 cursor-not-allowed'}
                   `}
-                  title={benchmarkReport ? 'View benchmark report' : 'Benchmark available after the run completes'}
+                  title={benchmarkReport ? 'View run details' : 'Run details appear after the session completes'}
                 >
                   <BarChart3 className="w-4 h-4" />
-                  <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">BENCH</span>
+                  <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">DETAILS</span>
                 </button>
               </DialogTrigger>
               <DialogContent className="max-w-3xl bg-[#0a0a0a] border border-white/10 text-white">
                 <DialogHeader>
                   <div className="flex items-center justify-between gap-3">
                     <DialogTitle className="text-sm font-mono uppercase tracking-widest text-white/80">
-                      Benchmark Report
+                      Run Details
                     </DialogTitle>
                     <button
                       type="button"
@@ -549,33 +583,33 @@ export function DebatePage() {
                         px-2 py-1 border text-[10px] font-mono uppercase tracking-wider transition-colors
                         ${benchmarkReport ? 'border-white/15 text-white/60 hover:text-white hover:border-white/30' : 'border-white/10 text-white/20 cursor-not-allowed'}
                       `}
-                      title={benchmarkReport ? 'Copy benchmark JSON' : 'Benchmark available after the run completes'}
+                      title={benchmarkReport ? 'Copy run details JSON' : 'Run details appear after the session completes'}
                     >
                       {benchCopied ? 'COPIED' : 'COPY JSON'}
                     </button>
                   </div>
                 </DialogHeader>
                 <DialogDescription className="sr-only">
-                  Performance metrics for the completed debate run.
+                  Timing and throughput details for the completed session.
                 </DialogDescription>
 
                 {benchmarkReport ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-3">
                       <div className="bg-white/[0.03] border border-white/[0.06] p-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">E2E</p>
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">End to End</p>
                         <p className="text-xl font-mono text-white/90">
                           {(benchmarkReport.e2eMs / 1000).toFixed(2)}s
                         </p>
                       </div>
                       <div className="bg-white/[0.03] border border-white/[0.06] p-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">TTFT (first token)</p>
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">First Response</p>
                         <p className="text-xl font-mono text-white/90">
                           {benchmarkReport.firstTokenMs !== null ? `${benchmarkReport.firstTokenMs}ms` : '--'}
                         </p>
                       </div>
                       <div className="bg-white/[0.03] border border-white/[0.06] p-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">Weighted TPS</p>
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40">Throughput</p>
                         <p className="text-xl font-mono text-[#F15A29]">
                           {derivedBench?.weightedTps ? Math.round(derivedBench.weightedTps).toLocaleString() : '--'}
                         </p>
@@ -584,7 +618,7 @@ export function DebatePage() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-white/[0.02] border border-white/[0.06] p-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Rounds</p>
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Workflow</p>
                         <div className="space-y-1">
                           {Object.entries(benchmarkReport.rounds || {})
                             .sort(([a], [b]) => Number(a) - Number(b))
@@ -599,7 +633,7 @@ export function DebatePage() {
                         </div>
                       </div>
                       <div className="bg-white/[0.02] border border-white/[0.06] p-3">
-                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Totals</p>
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Output</p>
                         <div className="space-y-1 text-xs font-mono text-white/70">
                           <div className="flex items-center justify-between">
                             <span>Completion tokens</span>
@@ -618,15 +652,15 @@ export function DebatePage() {
                     </div>
 
                     <div className="bg-white/[0.02] border border-white/[0.06] p-3">
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Agents</p>
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-2">Perspectives</p>
                       <div className="grid grid-cols-7 gap-2 text-[10px] font-mono uppercase tracking-wider text-white/40">
-                        <span>Agent</span>
-                        <span>Rnd</span>
+                        <span>Perspective</span>
+                        <span>Step</span>
                         <span>Model</span>
                         <span>TTFT</span>
                         <span>ITL</span>
-                        <span>Tok</span>
-                        <span>TPS</span>
+                        <span>Output</span>
+                        <span>Rate</span>
                       </div>
                       <div className="mt-2 space-y-1">
                         {Object.entries(benchmarkReport.agents || {})
@@ -651,7 +685,7 @@ export function DebatePage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-white/50 font-mono">No benchmark report available.</p>
+                  <p className="text-sm text-white/50 font-mono">Run details become available once the session completes.</p>
                 )}
               </DialogContent>
             </Dialog>
@@ -663,6 +697,18 @@ export function DebatePage() {
               <Clock className="w-4 h-4" />
               <span className="text-xs uppercase tracking-wider font-mono hidden sm:inline">HISTORY</span>
             </button>
+
+            <div className="hidden md:flex items-center gap-3 px-3 py-2 border border-white/10 bg-white/[0.03]">
+              <div className={`w-2 h-2 ${connectionCopy.dotClassName}`} />
+              <div className="min-w-0">
+                <p className="text-[10px] text-white/75 font-mono uppercase tracking-wider">
+                  {connectionCopy.label}
+                </p>
+                <p className="max-w-[220px] truncate text-[10px] text-white/35" title={connectionCopy.detail}>
+                  {connectionCopy.detail}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -684,14 +730,14 @@ export function DebatePage() {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              <span>NEW CONSULTATION</span>
+              <span>NEW SESSION</span>
             </button>
           </div>
 
           {/* Agent List */}
           <div className="flex-1 p-3 overflow-y-auto">
             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-3 px-2 font-mono">
-              CONSULTANTS
+              PERSPECTIVES
             </p>
             <div className="space-y-1">
               {visibleAgents.map((agentId) => {
@@ -754,11 +800,20 @@ export function DebatePage() {
           {/* Overlay: Waiting state */}
           {phase === 'idle' && !isDebating && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a]/80 backdrop-blur-sm">
-              <div className="text-center space-y-3">
-                <div className="w-8 h-8 border-2 border-white/20 border-t-[#F15A29] animate-spin mx-auto" />
-                <p className="text-xs text-white/50 font-mono uppercase tracking-wider">
-                  CONNECTING TO CEREBRAS
-                </p>
+              <div className="max-w-md px-6 text-center space-y-4">
+                <div className="w-10 h-10 border-2 border-white/15 border-t-[#F15A29] animate-spin mx-auto rounded-full" />
+                <div className="space-y-2">
+                  <p className="text-sm text-white/90 font-mono uppercase tracking-[0.2em]">
+                    {connectionCopy.label === 'Attention' ? 'Session Paused' : `${connectionCopy.label} Session`}
+                  </p>
+                  <p className="text-sm text-white/55 leading-relaxed">
+                    {connectionCopy.detail}
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-3 py-2 border border-white/10 bg-white/[0.03] text-[10px] font-mono uppercase tracking-wider text-white/45">
+                  <div className={`w-1.5 h-1.5 ${connectionCopy.dotClassName}`} />
+                  Canvas will unlock as soon as the session is live
+                </div>
               </div>
             </div>
           )}
@@ -858,7 +913,7 @@ export function DebatePage() {
                           </ReactMarkdown>
                         ) : (
                           <span className="text-white/40">
-                            {isThinkingInProgress ? '(thinking...)' : (agents[selectedAgentId].isStreaming ? '' : 'Waiting...')}
+                            {isThinkingInProgress ? '(thinking...)' : (agents[selectedAgentId].isStreaming ? '' : 'This perspective is standing by.')}
                           </span>
                         )}
                         {agents[selectedAgentId].isStreaming && !isThinkingInProgress && <span className="animate-pulse">▊</span>}

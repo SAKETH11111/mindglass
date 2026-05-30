@@ -254,6 +254,7 @@ export function DebateCanvas({ onNodeSelect, designMode = 'boxy' }: DebateCanvas
           isStreaming: agent.isStreaming,
           phase: nodeRound,
           tokensPerSecond: agent.tokensPerSecond,
+          streamStartTime: agent.streamStartTime,
           designMode,
         },
         draggable: false,

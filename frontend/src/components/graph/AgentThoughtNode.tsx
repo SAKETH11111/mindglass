@@ -8,7 +8,7 @@
  * - Tokens per second display
  */
 
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import ReactMarkdown from 'react-markdown';
 import { AGENT_NAMES, AGENT_COLORS, type AgentId } from '@/types/agent';
@@ -41,6 +41,7 @@ export interface AgentThoughtNodeData extends Record<string, unknown> {
   isStreaming: boolean;
   phase: number;
   tokensPerSecond?: number;
+  streamStartTime?: number | null;
   designMode?: 'boxy' | 'round';
   isUserProxy?: boolean;
   isFollowUp?: boolean;
@@ -75,9 +76,11 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
   const text = (data as AgentThoughtNodeData).text;
   const isStreaming = (data as AgentThoughtNodeData).isStreaming;
   const tokensPerSecond = (data as AgentThoughtNodeData).tokensPerSecond ?? 0;
+  const streamStartTime = (data as AgentThoughtNodeData).streamStartTime ?? null;
   const designMode = (data as AgentThoughtNodeData).designMode ?? 'boxy';
   const isUserProxy = (data as AgentThoughtNodeData).isUserProxy ?? false;
   const isFollowUp = (data as AgentThoughtNodeData).isFollowUp ?? false;
+  const [now, setNow] = useState(() => Date.now());
   // isCompletedTurn can be used for faded styling of past turns
   void (data as AgentThoughtNodeData).isCompletedTurn;
 
@@ -91,6 +94,24 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
   // Determine what to display
   const isThinking = thinking && !isThinkingComplete;
   const hasAnswer = answer.length > 0;
+  const waitingMs = streamStartTime ? Math.max(0, now - streamStartTime) : 0;
+
+  useEffect(() => {
+    if (!isStreaming || hasAnswer || isThinking) return;
+    setNow(Date.now());
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [hasAnswer, isStreaming, isThinking]);
+
+  const waitingLabel = waitingMs < 1200
+    ? 'Connecting to model...'
+    : waitingMs < 4500
+      ? 'Warming up first response...'
+      : waitingMs < 10000
+        ? 'Still working on the first response...'
+        : 'Taking longer than usual, but still running...';
   
   // For display: show thinking while streaming, then show answer
   let displayContent: string;
@@ -203,7 +224,12 @@ function AgentThoughtNodeComponent({ data, selected }: NodeProps) {
                 {isStreaming && <span className="ml-0.5">▊</span>}
               </>
             ) : isStreaming ? (
-              <span className="text-white/40 italic">Starting...</span>
+              <div className="space-y-1">
+                <span className="block text-white/50 italic">{waitingLabel}</span>
+                <span className="block text-[10px] text-white/25 font-mono">
+                  {Math.floor(waitingMs / 1000)}s elapsed
+                </span>
+              </div>
             ) : null}
           </div>
         </div>

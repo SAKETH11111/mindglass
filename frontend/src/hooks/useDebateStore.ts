@@ -439,6 +439,7 @@ export const useDebateStore = create<DebateState>()(
     setPhase: (phase, activeAgents) =>
       set((state) => {
         const updatedAgents = { ...state.agents };
+        const now = Date.now();
 
         // Set newly active agents
         for (const agentId of activeAgents) {
@@ -448,6 +449,7 @@ export const useDebateStore = create<DebateState>()(
               phase,
               isActive: true,
               isStreaming: true,
+              streamStartTime: updatedAgents[agentId].streamStartTime || now,
             };
           }
         }

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from app.agents import AGENT_REGISTRY
 from app.agents.industry import get_industry_agent_registry, get_industry_agent_ids, INDUSTRY_AGENTS
+from app.config import settings, get_accessible_cerebras_models
 
 # All available agent IDs
 ALL_AGENT_IDS = ['analyst', 'optimist', 'pessimist', 'critic', 'strategist', 'finance', 'risk', 'synthesizer']
@@ -123,6 +124,7 @@ class DebateOrchestrator:
         self._bench_first_token_at: Optional[float] = None
         self._bench_rounds: Dict[int, Dict[str, Any]] = {}
         self._bench_agents: Dict[str, Dict[str, Any]] = {}
+        self.available_models: set[str] = set()
 
     def _reset_benchmarks(self) -> None:
         self._bench_first_token_at = None
@@ -138,6 +140,7 @@ class DebateOrchestrator:
             "limit exceeded",
             "quota",
             "429",
+            "empty response",
             "timeout",
             "timed out",
             "deadline",
@@ -146,6 +149,63 @@ class DebateOrchestrator:
             "service unavailable",
         ]
         return any(trigger in lower for trigger in triggers)
+
+    def _resolve_primary_model(self, requested_model: str) -> str:
+        """Resolve legacy aliases and inaccessible models to a usable model ID."""
+        alias_map = {
+            "fast": settings.CEREBRAS_DEFAULT_MODEL,
+            "pro": settings.CEREBRAS_DEFAULT_MODEL,
+        }
+        resolved = alias_map.get(requested_model, requested_model)
+
+        if self.available_models:
+            if resolved in self.available_models:
+                return resolved
+            if settings.CEREBRAS_DEFAULT_MODEL in self.available_models:
+                return settings.CEREBRAS_DEFAULT_MODEL
+            return next(iter(self.available_models))
+
+        return resolved
+
+    def _resolve_fallback_model(self, primary_model: str) -> Optional[str]:
+        """Pick a fallback model that is actually available to the active API key."""
+        if settings.OPENROUTER_API_KEY and settings.OPENROUTER_FALLBACK_MODEL:
+            return f"openrouter/{settings.OPENROUTER_FALLBACK_MODEL}"
+
+        if not self.available_models:
+            return None
+
+        candidates = []
+        if settings.CEREBRAS_FALLBACK_MODEL:
+            candidates.append(settings.CEREBRAS_FALLBACK_MODEL)
+        candidates.extend(sorted(self.available_models))
+
+        for candidate in candidates:
+            if candidate and candidate != primary_model and candidate in self.available_models:
+                return candidate
+
+        return None
+
+    def _should_retry_same_model(self, error_text: str, fallback_model_id: Optional[str]) -> bool:
+        """Only retry the same model when a quick second attempt is plausibly helpful."""
+        if not self._is_retryable_error(error_text):
+            return False
+
+        lower = error_text.lower()
+        if fallback_model_id and any(trigger in lower for trigger in ["empty response", "rate limit", "quota", "429"]):
+            return False
+
+        return True
+
+    def _max_completion_tokens_for_round(self, round_config: DebateRound) -> int:
+        limits = {
+            "Opening Arguments": settings.CEREBRAS_MAX_TOKENS_OPENING,
+            "Challenge": settings.CEREBRAS_MAX_TOKENS_CHALLENGE,
+            "Defense & Rebuttal": settings.CEREBRAS_MAX_TOKENS_DEFENSE,
+            "Expert Analysis": settings.CEREBRAS_MAX_TOKENS_EXPERT,
+            "Final Verdict": settings.CEREBRAS_MAX_TOKENS_FINAL,
+        }
+        return limits.get(round_config.name, settings.CEREBRAS_MAX_TOKENS_EXPERT)
     
     def _initialize_agents(self, industry: str = "", api_key_override: str | None = None):
         """Initialize agents based on industry context."""
@@ -168,7 +228,7 @@ class DebateOrchestrator:
     async def stream_debate(
         self,
         query: str,
-        model: str = "pro",
+        model: str = "gpt-oss-120b",
         previous_context: str = "",
         selected_agents: List[str] = None,
         industry: str = "",
@@ -179,7 +239,7 @@ class DebateOrchestrator:
 
         Args:
             query: The user's query to debate
-            model: The model tier to use ('fast' or 'pro')
+            model: The model identifier or legacy tier alias
             previous_context: Context from previous turns in the same session
             selected_agents: Which agents to include (defaults to all)
             industry: Industry context for tailored advice (e.g., 'saas', 'fintech', 'healthcare')
@@ -196,6 +256,8 @@ class DebateOrchestrator:
         self._current_round_num = None
         self.previous_context = previous_context or ""
         self.industry = industry or ""  # Store industry context
+        resolved_key = api_key_override or settings.CEREBRAS_API_KEY
+        self.available_models = set(get_accessible_cerebras_models(resolved_key)) if resolved_key else set()
         
         # Initialize agents based on industry (creates industry-specific specialists)
         self._initialize_agents(self.industry, api_key_override=api_key_override)
@@ -227,16 +289,15 @@ class DebateOrchestrator:
         if 'synthesizer' not in self.selected_agents:
             self.selected_agents.append('synthesizer')
         
-        # Map tier to actual Cerebras model
-        model_map = {
-            "fast": "llama3.1-8b",
-            "pro": "gpt-oss-120b",  # GPT-OSS 120B for pro tier
-        }
-        model_id = model_map.get(model, "llama3.1-8b")
+        # Support old saved URLs while defaulting to a single hosted primary model.
+        model_id = self._resolve_primary_model(model)
+        fallback_model_id = self._resolve_fallback_model(model_id)
         # Disable reasoning for GPT-OSS (no <think> tags)
         use_reasoning = False
         
-        print(f"[{datetime.now().isoformat()}] Debate starting - model: {model_id}, tier: {model}")
+        print(f"[{datetime.now().isoformat()}] Debate starting - model: {model_id}, requested: {model}")
+        print(f"[{datetime.now().isoformat()}] Model availability: {sorted(self.available_models) or ['unknown']}")
+        print(f"[{datetime.now().isoformat()}] Fallback model: {fallback_model_id or 'none'}")
         print(f"[{datetime.now().isoformat()}] Selected agents: {self.selected_agents}")
         print(f"[{datetime.now().isoformat()}] Query: {query[:100]}...")
         if self.industry:
@@ -296,7 +357,7 @@ class DebateOrchestrator:
                     enriched_query,
                     model_id,
                     use_reasoning,
-                    fallback_model_id="llama3.1-8b",
+                    fallback_model_id=fallback_model_id,
                 ):
                     yield msg
             except RoundRestartRequested:
@@ -333,7 +394,7 @@ class DebateOrchestrator:
     async def stream_branching_debate(
         self,
         query: str,
-        model: str = "pro",
+        model: str = "gpt-oss-120b",
         previous_context: str = "",
         selected_agents: List[str] = None,
         industry: str = "",
@@ -540,6 +601,8 @@ class DebateOrchestrator:
                         agent_name = self.agents[agent_id].name
                         # Clean up text (remove think tags for context)
                         clean_text = self._strip_think_tags(text)
+                        if len(clean_text) > settings.CEREBRAS_CONTEXT_CHARS_PER_AGENT:
+                            clean_text = clean_text[:settings.CEREBRAS_CONTEXT_CHARS_PER_AGENT].rstrip() + "..."
                         context_parts.append(f"\n[{agent_name}]:\n{clean_text}")
                     
                     context_parts.append("")  # Empty line between rounds
@@ -593,10 +656,15 @@ class DebateOrchestrator:
         
         # Add previous session context if this is a follow-up question
         if self.previous_context:
+            previous_context = self.previous_context
+            if len(previous_context) > settings.CEREBRAS_PREVIOUS_CONTEXT_MAX_CHARS:
+                previous_context = (
+                    previous_context[-settings.CEREBRAS_PREVIOUS_CONTEXT_MAX_CHARS:].lstrip()
+                )
             parts.extend([
                 "=== PREVIOUS CONSULTATION CONTEXT ===",
                 "The user is continuing a consultation session. Here is what was previously discussed:",
-                self.previous_context,
+                previous_context,
                 "=== END OF PREVIOUS CONTEXT ===",
                 "",
                 "Now the user has a FOLLOW-UP QUESTION. Consider the above context when responding.",
@@ -618,6 +686,7 @@ class DebateOrchestrator:
         parts.extend([
             f"CURRENT ROUND: {round_config.name}",
             f"YOUR TASK: {round_config.context_prompt}",
+            "Keep your response concise and high-signal. Prefer the few strongest points over exhaustive coverage.",
         ])
         
         if debate_context:
@@ -644,6 +713,8 @@ class DebateOrchestrator:
         round_wall_start = time.time()
         queue: asyncio.Queue = asyncio.Queue()
         running_tasks: list[asyncio.Task] = []
+        semaphore = asyncio.Semaphore(max(1, settings.CEREBRAS_MAX_PARALLEL_AGENTS))
+        max_completion_tokens = self._max_completion_tokens_for_round(round_config)
         agent_buffers: Dict[str, List[str]] = {aid: [] for aid in round_config.agents}
         agent_token_counts: Dict[str, int] = {aid: 0 for aid in round_config.agents}
         agent_start_times: Dict[str, float] = {}
@@ -661,37 +732,71 @@ class DebateOrchestrator:
         async def stream_agent(agent_id: str, agent, model_to_use: str):
             """Stream tokens from a single agent into the queue."""
             try:
-                agent_start_times[agent_id] = time.time()
-                agent_model_used[agent_id] = model_to_use
-
-                async def run_with_model(active_model: str) -> Optional[str]:
-                    """Returns error text if we should retry/fail, otherwise None."""
-                    sent_any = False
-                    async for token in agent.stream_response(
-                        enriched_query,
-                        model_override=active_model,
-                        use_reasoning=use_reasoning,
-                    ):
-                        # If the agent immediately yields an error token, treat it as retryable/fatal
-                        if token.get("type") == "agent_token" and isinstance(token.get("content"), str):
-                            if not sent_any and token["content"].startswith("[Error:"):
-                                return token["content"]
-                            sent_any = True
-                        await queue.put(token)
-                    return None
-
-                print(
-                    f"[{datetime.now().isoformat()}] Agent start: {agent_id} "
-                    f"(round {round_config.round_num}, model={model_to_use})"
-                )
-                error_text = await run_with_model(model_to_use)
-                if error_text and fallback_model_id and model_to_use != fallback_model_id and self._is_retryable_error(error_text):
-                    agent_model_used[agent_id] = fallback_model_id
+                async with semaphore:
+                    agent_start_times[agent_id] = time.time()
                     print(
-                        f"[{datetime.now().isoformat()}] Agent retry: {agent_id} "
-                        f"model={model_to_use} -> {fallback_model_id}"
+                        f"[{datetime.now().isoformat()}] Agent start: {agent_id} "
+                        f"(round {round_config.round_num}, model={model_to_use}, max_tokens={max_completion_tokens})"
                     )
-                    error_text = await run_with_model(fallback_model_id)
+
+                    async def run_with_model(active_model: str) -> Optional[str]:
+                        """Returns error text if we should retry/fail, otherwise None."""
+                        sent_any = False
+                        pending_metrics: Optional[Dict[str, Any]] = None
+                        pending_done: Optional[Dict[str, Any]] = None
+                        agent_model_used[agent_id] = active_model
+                        async for token in agent.stream_response(
+                            enriched_query,
+                            model_override=active_model,
+                            use_reasoning=use_reasoning,
+                            max_completion_tokens=max_completion_tokens,
+                        ):
+                            if token.get("type") == "agent_token" and isinstance(token.get("content"), str):
+                                content = token["content"]
+                                if content.startswith("[Error:"):
+                                    if not sent_any:
+                                        return content
+                                    print(
+                                        f"[{datetime.now().isoformat()}] Agent late stream error: "
+                                        f"{agent_id} {content}"
+                                    )
+                                    continue
+                                sent_any = True
+                                await queue.put(token)
+                                continue
+
+                            if token.get("type") == "agent_metrics":
+                                pending_metrics = token
+                                continue
+
+                            if token.get("type") == "agent_done":
+                                pending_done = token
+                                continue
+
+                            await queue.put(token)
+                        if not sent_any:
+                            return "[Error: empty response]"
+                        if pending_metrics:
+                            await queue.put(pending_metrics)
+                        if pending_done:
+                            await queue.put(pending_done)
+                        return None
+
+                    error_text = await run_with_model(model_to_use)
+                    if error_text and self._should_retry_same_model(error_text, fallback_model_id):
+                        await asyncio.sleep(settings.CEREBRAS_RETRY_BACKOFF_SECONDS)
+                        print(
+                            f"[{datetime.now().isoformat()}] Agent retry same model: {agent_id} "
+                            f"model={model_to_use}"
+                        )
+                        error_text = await run_with_model(model_to_use)
+
+                    if error_text and fallback_model_id and model_to_use != fallback_model_id and self._is_retryable_error(error_text):
+                        print(
+                            f"[{datetime.now().isoformat()}] Agent retry fallback: {agent_id} "
+                            f"model={model_to_use} -> {fallback_model_id}"
+                        )
+                        error_text = await run_with_model(fallback_model_id)
 
                 if error_text:
                     error_msg = error_text.replace("[Error:", "").replace("]", "").strip()
