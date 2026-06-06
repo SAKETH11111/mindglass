@@ -18,7 +18,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { BarChart3, Clock } from 'lucide-react';
-import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, getAgentIdsForIndustry } from '@/types/agent';
+import { AGENT_IDS, AGENT_NAMES, AGENT_COLORS, type AgentId, type AgentState, type Phase, getAgentIdsForIndustry } from '@/types/agent';
 import { useDebateStore, type ConnectionState } from '@/hooks/useDebateStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { DebateCanvas } from '@/components/graph';
@@ -29,6 +29,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import type { ConsultationSession } from '@/types/session';
 import canvasBg from '@/assets/canvas_orb.png';
 import { normalizeModelParam } from '@/lib/models';
+import { runClientDemoDebate } from '@/lib/clientDemoDebate';
+import type { WebSocketMessage } from '@/types/websocket';
 
 // DiceBear avatar
 const getAvatarUrl = (agentId: string) => {
@@ -116,6 +118,7 @@ export function DebatePage() {
   const hasAutoOpenedSynth = useRef(false);
   const hasPersistedCompletedTurnRef = useRef(false);
   const hasHydratedSessionRef = useRef(false);
+  const demoAbortRef = useRef<AbortController | null>(null);
 
   // Parse and de-duplicate selected agents from URL
   const agentsFromUrl = useMemo<AgentId[] | null>(() => {
@@ -143,6 +146,16 @@ export function DebatePage() {
   const resetDebate = useDebateStore((state) => state.resetDebate);
   const benchmarkReport = useDebateStore((state) => state.benchmarkReport);
   const storeDebateStartTime = useDebateStore((state) => state.debateStartTime);
+  const setConnectionState = useDebateStore((state) => state.setConnectionState);
+  const startDebate = useDebateStore((state) => state.startDebate);
+  const appendToken = useDebateStore((state) => state.appendToken);
+  const setAgentMetrics = useDebateStore((state) => state.setAgentMetrics);
+  const setPhase = useDebateStore((state) => state.setPhase);
+  const setAgentDone = useDebateStore((state) => state.setAgentDone);
+  const addCheckpoint = useDebateStore((state) => state.addCheckpoint);
+  const setBenchmarkReport = useDebateStore((state) => state.setBenchmarkReport);
+  const endDebate = useDebateStore((state) => state.endDebate);
+  const setError = useDebateStore((state) => state.setError);
 
   const synthesizerText = agents.synthesizer?.text || '';
   const synthesizerStreaming = agents.synthesizer?.isStreaming || false;
@@ -298,14 +311,105 @@ export function DebatePage() {
     return effectiveSelectedAgents;
   }, [effectiveSelectedAgents]);
 
-  // WebSocket
-  const { isReady, startDebateSession, startFollowUpSession, injectConstraint } = useWebSocket({ autoConnect: true });
+  // WebSocket is only needed for live custom prompts. Preset demos run locally.
+  const { isReady, startDebateSession, startFollowUpSession, injectConstraint } = useWebSocket({ autoConnect: !isDemoMode });
 
   // Constraint input state
   const [constraintInput, setConstraintInput] = useState('');
 
   // Timing
   const [elapsedMs, setElapsedMs] = useState(0);
+
+  const handleDemoMessage = useCallback((data: WebSocketMessage) => {
+    const debateStartTime = useDebateStore.getState().debateStartTime;
+    const getTimestamp = () => debateStartTime ? Date.now() - debateStartTime : 0;
+
+    switch (data.type) {
+      case 'agent_token': {
+        appendToken(data.agentId, data.content);
+        break;
+      }
+      case 'agent_metrics': {
+        setAgentMetrics(data.agentId, {
+          tokensPerSecond: data.tokensPerSecond,
+          totalTokens: data.totalTokens,
+          promptTokens: data.promptTokens,
+          completionTokens: data.completionTokens,
+          completionTime: data.completionTime,
+        });
+        break;
+      }
+      case 'agent_done': {
+        setAgentDone(data.agentId);
+        const agentName = data.agentId.charAt(0).toUpperCase() + data.agentId.slice(1);
+        addCheckpoint({
+          id: `agent-${data.agentId}-${Date.now()}`,
+          timestamp: getTimestamp(),
+          type: 'agent_done',
+          label: `${agentName} finished`,
+          agentId: data.agentId,
+        });
+        break;
+      }
+      case 'phase_start':
+      case 'round_start': {
+        setPhase(data.name as Phase, (data.agents || []) as AgentId[]);
+        break;
+      }
+      case 'debate_complete': {
+        if (data.benchmark) {
+          setBenchmarkReport(data.benchmark);
+        }
+        endDebate();
+        break;
+      }
+      case 'error': {
+        setError(data.message);
+        setConnectionState('error');
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }, [
+    addCheckpoint,
+    appendToken,
+    endDebate,
+    setAgentDone,
+    setAgentMetrics,
+    setBenchmarkReport,
+    setConnectionState,
+    setError,
+    setPhase,
+  ]);
+
+  const startClientDemoRun = useCallback((demoQuery: string, demoAgents: AgentId[]) => {
+    demoAbortRef.current?.abort();
+    const controller = new AbortController();
+    demoAbortRef.current = controller;
+
+    setConnectionState('connected');
+    setError(null);
+
+    void runClientDemoDebate({
+      query: demoQuery,
+      selectedAgents: demoAgents,
+      signal: controller.signal,
+      onMessage: handleDemoMessage,
+    }).catch((err) => {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setConnectionState('error');
+      setError('Demo playback failed. Try starting a new session.');
+      endDebate();
+    });
+  }, [endDebate, handleDemoMessage, setConnectionState, setError]);
+
+  useEffect(() => {
+    return () => {
+      demoAbortRef.current?.abort();
+    };
+  }, []);
 
   // Keep session-store selection synchronized with URL/industry-derived selection
   useEffect(() => {
@@ -369,9 +473,27 @@ export function DebatePage() {
 
       const previousContext = getPreviousTurnsContext();
       startNewTurn(query);
-      startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam, isDemoMode);
+      if (isDemoMode) {
+        startDebate(query, industryParam);
+        startClientDemoRun(query, effectiveSelectedAgents);
+        return;
+      }
+      startDebateSession(query, modelTier, previousContext, effectiveSelectedAgents, industryParam);
     }
-  }, [query, modelTier, isDebating, phase, startDebateSession, getPreviousTurnsContext, startNewTurn, effectiveSelectedAgents, industryParam, isDemoMode]);
+  }, [
+    query,
+    modelTier,
+    isDebating,
+    phase,
+    startDebateSession,
+    getPreviousTurnsContext,
+    startNewTurn,
+    effectiveSelectedAgents,
+    industryParam,
+    isDemoMode,
+    startDebate,
+    startClientDemoRun,
+  ]);
 
   // Mark turn complete when debate ends
   useEffect(() => {
@@ -453,7 +575,7 @@ export function DebatePage() {
 
   const handleFollowUpSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!followUpInput.trim() || !isReady) return;
+    if (!followUpInput.trim() || (!isReady && !isDemoMode)) return;
 
     const newQuery = followUpInput.trim();
     setFollowUpInput('');
@@ -478,6 +600,10 @@ export function DebatePage() {
     // 6. Build context from previous turns and start the WebSocket debate
     // Use startFollowUpSession which does NOT reset the store
     const previousContext = getPreviousTurnsContext();
+    if (isDemoMode) {
+      startClientDemoRun(newQuery, effectiveSelectedAgents);
+      return;
+    }
     startFollowUpSession(newQuery, modelTier, previousContext, effectiveSelectedAgents);
   };
 
